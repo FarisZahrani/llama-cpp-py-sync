@@ -8,13 +8,10 @@ This script generates version strings based on:
 - llama.cpp upstream commit SHA
 """
 
-import os
-import sys
-import re
-import subprocess
 import argparse
-from pathlib import Path
+import subprocess
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
 
@@ -93,7 +90,7 @@ def main():
 
     if args.update:
         update_version_file(project_root, version, llama_commit)
-    
+
     if args.print_version or not args.update:
         print(version)
 

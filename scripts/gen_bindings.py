@@ -7,13 +7,11 @@ automatically. It parses the C declarations and creates a _cffi_bindings.py
 file that can be used to interface with the llama.cpp shared library.
 """
 
-import os
-import re
-import sys
 import argparse
-from pathlib import Path
-from typing import List, Optional, Tuple, Set
+import re
 from datetime import datetime
+from pathlib import Path
+from typing import List, Optional
 
 
 def get_project_root() -> Path:
@@ -24,33 +22,33 @@ def get_project_root() -> Path:
 def find_header_files(vendor_path: Path) -> dict:
     """Find relevant header files in the vendor directory."""
     headers = {}
-    
+
     include_path = vendor_path / "include"
     if include_path.exists():
         llama_h = include_path / "llama.h"
         if llama_h.exists():
             headers["llama.h"] = llama_h
-    
+
     llama_h_root = vendor_path / "llama.h"
     if llama_h_root.exists() and "llama.h" not in headers:
         headers["llama.h"] = llama_h_root
-    
+
     ggml_h = vendor_path / "ggml" / "include" / "ggml.h"
     if ggml_h.exists():
         headers["ggml.h"] = ggml_h
-    
+
     return headers
 
 
 def preprocess_header(content: str) -> str:
     """
     Preprocess the header content to make it CFFI-compatible.
-    
+
     This removes compiler-specific attributes, macros, and other
     elements that CFFI cannot parse directly.
     """
     content = re.sub(r'#include\s*[<"][^>"]+[>"]', '', content)
-    
+
     content = re.sub(r'#\s*if.*?#\s*endif', '', content, flags=re.DOTALL)
     content = re.sub(r'#\s*ifdef.*?#\s*endif', '', content, flags=re.DOTALL)
     content = re.sub(r'#\s*ifndef.*?#\s*endif', '', content, flags=re.DOTALL)
@@ -60,7 +58,7 @@ def preprocess_header(content: str) -> str:
     content = re.sub(r'#\s*pragma[^\n]*\n', '', content)
     content = re.sub(r'#\s*error[^\n]*\n', '', content)
     content = re.sub(r'#\s*warning[^\n]*\n', '', content)
-    
+
     content = re.sub(r'LLAMA_API\s+', '', content)
     content = re.sub(r'GGML_API\s+', '', content)
     content = re.sub(r'__attribute__\s*\(\([^)]*\)\)', '', content)
@@ -69,30 +67,30 @@ def preprocess_header(content: str) -> str:
     content = re.sub(r'GGML_RESTRICT\s*', '', content)
     content = re.sub(r'LLAMA_DEPRECATED\s*', '', content)
     content = re.sub(r'GGML_DEPRECATED\s*', '', content)
-    
+
     content = re.sub(r'\bextern\s+"C"\s*\{', '', content)
     content = re.sub(r'\}\s*//\s*extern\s+"C"', '', content)
-    
+
     content = re.sub(r'//[^\n]*\n', '\n', content)
     content = re.sub(r'/\*.*?\*/', '', content, flags=re.DOTALL)
-    
+
     content = re.sub(r'\n\s*\n\s*\n+', '\n\n', content)
-    
+
     return content
 
 
 def extract_enums(content: str) -> List[str]:
     """Extract enum definitions from header content."""
     enums = []
-    
+
     enum_pattern = r'enum\s+(\w+)\s*\{([^}]+)\}'
-    
+
     for match in re.finditer(enum_pattern, content):
         enum_name = match.group(1)
         enum_body = match.group(2)
-        
+
         enum_def = f"enum {enum_name} {{\n"
-        
+
         members = []
         for line in enum_body.split('\n'):
             line = line.strip()
@@ -100,62 +98,62 @@ def extract_enums(content: str) -> List[str]:
                 line = re.sub(r'//.*$', '', line).strip()
                 if line:
                     members.append(f"    {line}")
-        
+
         enum_def += '\n'.join(members)
         enum_def += "\n};"
         enums.append(enum_def)
-    
+
     return enums
 
 
 def extract_structs(content: str) -> List[str]:
     """Extract struct definitions from header content."""
     structs = []
-    
+
     typedef_struct_pattern = r'typedef\s+struct\s+(\w+)?\s*\{([^}]+)\}\s*(\w+)\s*;'
-    
+
     for match in re.finditer(typedef_struct_pattern, content):
         struct_name = match.group(3)
         struct_body = match.group(2)
-        
+
         struct_def = f"typedef struct {struct_name} {{\n"
-        
+
         for line in struct_body.split('\n'):
             line = line.strip()
             if line and not line.startswith('//'):
                 line = re.sub(r'//.*$', '', line).strip()
                 if line:
                     struct_def += f"    {line}\n"
-        
+
         struct_def += f"}} {struct_name};"
         structs.append(struct_def)
-    
+
     return structs
 
 
 def extract_functions(content: str) -> List[str]:
     """Extract function declarations from header content."""
     functions = []
-    
+
     func_pattern = r'^[\w\s\*]+\s+(\w+)\s*\([^)]*\)\s*;'
-    
+
     for match in re.finditer(func_pattern, content, re.MULTILINE):
         func_decl = match.group(0).strip()
         if not func_decl.startswith('typedef'):
             functions.append(func_decl)
-    
+
     return functions
 
 
 def generate_cdef(headers: dict) -> str:
     """
     Generate CFFI cdef string from header files.
-    
+
     This is a simplified parser - for production use, consider using
     pycparser or a more robust C parser.
     """
     cdef_parts = []
-    
+
     cdef_parts.append("""
 // Basic types
 typedef int32_t llama_pos;
@@ -167,13 +165,13 @@ typedef struct llama_model llama_model;
 typedef struct llama_context llama_context;
 typedef struct llama_sampler llama_sampler;
 """)
-    
+
     if "llama.h" in headers:
-        with open(headers["llama.h"], "r", encoding="utf-8", errors="ignore") as f:
+        with open(headers["llama.h"], encoding="utf-8", errors="ignore") as f:
             content = f.read()
-        
-        processed = preprocess_header(content)
-        
+
+        preprocess_header(content)
+
     return "\n".join(cdef_parts)
 
 
@@ -185,11 +183,11 @@ def generate_bindings_file(
 ):
     """Generate the _cffi_bindings.py file."""
     headers = find_header_files(vendor_path)
-    
+
     if not headers:
         print("Warning: No header files found in vendor directory")
         print("Using default bindings template")
-    
+
     template = '''"""
 CFFI ABI bindings for llama.cpp
 
@@ -609,26 +607,26 @@ ffi.cdef(_LLAMA_H_CDEF)
 def _find_library():
     """Find the llama shared library."""
     lib_dir = Path(__file__).parent
-    
+
     system = platform.system().lower()
     machine = platform.machine().lower()
-    
+
     if system == "windows":
         lib_names = ["llama.dll", "libllama.dll"]
     elif system == "darwin":
         lib_names = ["libllama.dylib", "libllama.so"]
     else:
         lib_names = ["libllama.so"]
-    
+
     for lib_name in lib_names:
         lib_path = lib_dir / lib_name
         if lib_path.exists():
             return str(lib_path)
-    
+
     env_path = os.environ.get("LLAMA_CPP_LIB")
     if env_path and os.path.exists(env_path):
         return env_path
-    
+
     search_paths = []
     if system == "linux":
         search_paths = [
@@ -647,26 +645,26 @@ def _find_library():
             os.path.join(os.environ.get("ProgramFiles", ""), "llama.cpp", "bin"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "llama.cpp", "bin"),
         ]
-    
+
     for search_path in search_paths:
         for lib_name in lib_names:
             lib_path = os.path.join(search_path, lib_name)
             if os.path.exists(lib_path):
                 return lib_path
-    
+
     return None
 
 
 def _load_library():
     """Load the llama shared library."""
     lib_path = _find_library()
-    
+
     if lib_path is None:
         raise RuntimeError(
             "Could not find llama.cpp shared library. "
             "Please ensure the library is installed or set LLAMA_CPP_LIB environment variable."
         )
-    
+
     try:
         return ffi.dlopen(lib_path)
     except OSError as e:
@@ -688,19 +686,19 @@ def get_ffi():
     """Get the CFFI FFI instance."""
     return ffi
 '''
-    
+
     timestamp = datetime.utcnow().isoformat()
     commit_sha = commit_sha or "unknown"
-    
+
     output_content = template.format(
         timestamp=timestamp,
         commit_sha=commit_sha
     )
-    
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(output_content)
-    
+
     print(f"Generated bindings at: {output_path}")
 
 
@@ -732,13 +730,13 @@ def main():
         default=None,
         help="Project root directory"
     )
-    
+
     args = parser.parse_args()
-    
+
     project_root = args.project_root or get_project_root()
     vendor_path = args.vendor_path or (project_root / "vendor" / "llama.cpp")
     output_path = args.output or (project_root / "src" / "llama_cpp_py_sync" / "_cffi_bindings.py")
-    
+
     generate_bindings_file(
         project_root=project_root,
         vendor_path=vendor_path,

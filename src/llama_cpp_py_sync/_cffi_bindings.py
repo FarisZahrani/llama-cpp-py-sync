@@ -6,9 +6,9 @@ DO NOT EDIT MANUALLY - changes will be overwritten on next sync.
 """
 
 import os
-import sys
 import platform
 from pathlib import Path
+
 from cffi import FFI
 
 ffi = FFI()
@@ -413,26 +413,26 @@ ffi.cdef(_LLAMA_H_CDEF)
 def _find_library():
     """Find the llama shared library."""
     lib_dir = Path(__file__).parent
-    
+
     system = platform.system().lower()
-    machine = platform.machine().lower()
-    
+    platform.machine().lower()
+
     if system == "windows":
         lib_names = ["llama.dll", "libllama.dll"]
     elif system == "darwin":
         lib_names = ["libllama.dylib", "libllama.so"]
     else:
         lib_names = ["libllama.so"]
-    
+
     for lib_name in lib_names:
         lib_path = lib_dir / lib_name
         if lib_path.exists():
             return str(lib_path)
-    
+
     env_path = os.environ.get("LLAMA_CPP_LIB")
     if env_path and os.path.exists(env_path):
         return env_path
-    
+
     search_paths = []
     if system == "linux":
         search_paths = [
@@ -451,30 +451,30 @@ def _find_library():
             os.path.join(os.environ.get("ProgramFiles", ""), "llama.cpp", "bin"),
             os.path.join(os.environ.get("LOCALAPPDATA", ""), "llama.cpp", "bin"),
         ]
-    
+
     for search_path in search_paths:
         for lib_name in lib_names:
             lib_path = os.path.join(search_path, lib_name)
             if os.path.exists(lib_path):
                 return lib_path
-    
+
     return None
 
 
 def _load_library():
     """Load the llama shared library."""
     lib_path = _find_library()
-    
+
     if lib_path is None:
         raise RuntimeError(
             "Could not find llama.cpp shared library. "
             "Please ensure the library is installed or set LLAMA_CPP_LIB environment variable."
         )
-    
+
     try:
         return ffi.dlopen(lib_path)
     except OSError as e:
-        raise RuntimeError(f"Failed to load llama.cpp library from {lib_path}: {e}")
+        raise RuntimeError(f"Failed to load llama.cpp library from {lib_path}: {e}") from e
 
 
 _lib = None

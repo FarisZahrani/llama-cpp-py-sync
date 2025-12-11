@@ -6,19 +6,19 @@ llama.cpp models that support embedding generation.
 """
 
 from __future__ import annotations
-from typing import List, Union, Optional
+
 import numpy as np
 
 from llama_cpp_py_sync.llama import Llama
 
 
-def normalize_embedding(embedding: List[float]) -> List[float]:
+def normalize_embedding(embedding: list[float]) -> list[float]:
     """
     Normalize an embedding vector to unit length.
-    
+
     Args:
         embedding: Raw embedding vector.
-        
+
     Returns:
         Normalized embedding vector.
     """
@@ -30,25 +30,25 @@ def normalize_embedding(embedding: List[float]) -> List[float]:
 
 
 def get_embeddings(
-    model: Union[str, Llama],
+    model: str | Llama,
     text: str,
     normalize: bool = True,
     n_ctx: int = 512,
     n_gpu_layers: int = 0,
-) -> List[float]:
+) -> list[float]:
     """
     Get embeddings for a single text string.
-    
+
     Args:
         model: Either a path to a GGUF model file or an existing Llama instance.
         text: Text to embed.
         normalize: Whether to normalize the embedding to unit length.
         n_ctx: Context size (only used if model is a path).
         n_gpu_layers: GPU layers (only used if model is a path).
-        
+
     Returns:
         Embedding vector as a list of floats.
-        
+
     Example:
         >>> emb = get_embeddings("model.gguf", "Hello, world!")
         >>> print(len(emb))
@@ -64,33 +64,33 @@ def get_embeddings(
             embedding = llm.get_embeddings(text)
     else:
         embedding = model.get_embeddings(text)
-    
+
     if normalize:
         embedding = normalize_embedding(embedding)
-    
+
     return embedding
 
 
 def get_embeddings_batch(
-    model: Union[str, Llama],
-    texts: List[str],
+    model: str | Llama,
+    texts: list[str],
     normalize: bool = True,
     n_ctx: int = 512,
     n_gpu_layers: int = 0,
-) -> List[List[float]]:
+) -> list[list[float]]:
     """
     Get embeddings for multiple text strings.
-    
+
     Args:
         model: Either a path to a GGUF model file or an existing Llama instance.
         texts: List of texts to embed.
         normalize: Whether to normalize embeddings to unit length.
         n_ctx: Context size (only used if model is a path).
         n_gpu_layers: GPU layers (only used if model is a path).
-        
+
     Returns:
         List of embedding vectors.
-        
+
     Example:
         >>> embs = get_embeddings_batch("model.gguf", ["Hello", "World"])
         >>> print(len(embs))
@@ -106,45 +106,45 @@ def get_embeddings_batch(
             embeddings = [llm.get_embeddings(text) for text in texts]
     else:
         embeddings = [model.get_embeddings(text) for text in texts]
-    
+
     if normalize:
         embeddings = [normalize_embedding(emb) for emb in embeddings]
-    
+
     return embeddings
 
 
-def cosine_similarity(a: List[float], b: List[float]) -> float:
+def cosine_similarity(a: list[float], b: list[float]) -> float:
     """
     Compute cosine similarity between two embedding vectors.
-    
+
     Args:
         a: First embedding vector.
         b: Second embedding vector.
-        
+
     Returns:
         Cosine similarity score between -1 and 1.
     """
     arr_a = np.array(a, dtype=np.float32)
     arr_b = np.array(b, dtype=np.float32)
-    
+
     dot_product = np.dot(arr_a, arr_b)
     norm_a = np.linalg.norm(arr_a)
     norm_b = np.linalg.norm(arr_b)
-    
+
     if norm_a == 0 or norm_b == 0:
         return 0.0
-    
+
     return float(dot_product / (norm_a * norm_b))
 
 
-def euclidean_distance(a: List[float], b: List[float]) -> float:
+def euclidean_distance(a: list[float], b: list[float]) -> float:
     """
     Compute Euclidean distance between two embedding vectors.
-    
+
     Args:
         a: First embedding vector.
         b: Second embedding vector.
-        
+
     Returns:
         Euclidean distance (lower = more similar).
     """

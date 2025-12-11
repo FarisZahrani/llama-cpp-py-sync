@@ -6,12 +6,11 @@ in the compiled llama.cpp library.
 """
 
 from __future__ import annotations
-from typing import Dict, List, Any
-from dataclasses import dataclass
-import platform
-import os
 
-from llama_cpp_py_sync._cffi_bindings import get_lib, get_ffi
+import platform
+from dataclasses import dataclass
+
+from llama_cpp_py_sync._cffi_bindings import get_ffi, get_lib
 
 
 @dataclass
@@ -29,10 +28,10 @@ class BackendInfo:
     system_info: str = ""
 
 
-def _check_backend_from_system_info(system_info: str) -> Dict[str, bool]:
+def _check_backend_from_system_info(system_info: str) -> dict[str, bool]:
     """Parse system info string to detect backends."""
     info_lower = system_info.lower()
-    
+
     return {
         "cuda": "cuda" in info_lower or "cublas" in info_lower,
         "metal": "metal" in info_lower,
@@ -45,10 +44,10 @@ def _check_backend_from_system_info(system_info: str) -> Dict[str, bool]:
 def get_backend_info() -> BackendInfo:
     """
     Get comprehensive information about available backends.
-    
+
     Returns:
         BackendInfo object with details about available backends.
-        
+
     Example:
         >>> info = get_backend_info()
         >>> print(f"CUDA available: {info.cuda}")
@@ -56,12 +55,12 @@ def get_backend_info() -> BackendInfo:
     """
     lib = get_lib()
     ffi = get_ffi()
-    
+
     system_info_ptr = lib.llama_print_system_info()
     system_info = ffi.string(system_info_ptr).decode("utf-8")
-    
+
     backends = _check_backend_from_system_info(system_info)
-    
+
     return BackendInfo(
         cuda=backends["cuda"],
         metal=backends["metal"],
@@ -76,13 +75,13 @@ def get_backend_info() -> BackendInfo:
     )
 
 
-def get_available_backends() -> List[str]:
+def get_available_backends() -> list[str]:
     """
     Get a list of available backend names.
-    
+
     Returns:
         List of backend name strings (e.g., ["cuda", "blas"]).
-        
+
     Example:
         >>> backends = get_available_backends()
         >>> print(backends)
@@ -90,7 +89,7 @@ def get_available_backends() -> List[str]:
     """
     info = get_backend_info()
     backends = []
-    
+
     if info.cuda:
         backends.append("cuda")
     if info.metal:
@@ -101,10 +100,10 @@ def get_available_backends() -> List[str]:
         backends.append("rocm")
     if info.blas:
         backends.append("blas")
-    
+
     if not backends:
         backends.append("cpu")
-    
+
     return backends
 
 
@@ -142,21 +141,21 @@ def is_gpu_available() -> bool:
 def get_recommended_gpu_layers(model_size_gb: float) -> int:
     """
     Get recommended number of GPU layers based on model size.
-    
+
     This is a rough heuristic and may need adjustment based on
     actual GPU memory available.
-    
+
     Args:
         model_size_gb: Approximate model size in gigabytes.
-        
+
     Returns:
         Recommended number of GPU layers.
     """
     if not is_gpu_available():
         return 0
-    
-    info = get_backend_info()
-    
+
+    get_backend_info()
+
     if model_size_gb <= 4:
         return 35
     elif model_size_gb <= 8:
@@ -170,7 +169,7 @@ def get_recommended_gpu_layers(model_size_gb: float) -> int:
 def print_backend_info():
     """Print formatted backend information to stdout."""
     info = get_backend_info()
-    
+
     print("=" * 60)
     print("llama-cpp-py-sync Backend Information")
     print("=" * 60)
