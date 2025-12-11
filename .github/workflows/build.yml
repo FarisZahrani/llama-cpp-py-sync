@@ -1,0 +1,282 @@
+name: Build Wheels
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['*']
+  pull_request:
+    branches: [main, master]
+  schedule:
+    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild even if no upstream changes'
+        required: false
+        default: 'false'
+
+env:
+  LLAMA_CPP_REPO: https://github.com/ggerganov/llama.cpp.git
+
+jobs:
+  check-upstream:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Check upstream for changes
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git ls-remote ${{ env.LLAMA_CPP_REPO }} HEAD | cut -f1)
+          echo "upstream_sha=${UPSTREAM_SHA}" >> $GITHUB_OUTPUT
+          
+          if [ -f .llama_cpp_sync_state.json ]; then
+            LAST_SHA=$(cat .llama_cpp_sync_state.json | jq -r '.last_sync_sha // ""')
+          else
+            LAST_SHA=""
+          fi
+          
+          if [ "${{ github.event.inputs.force_rebuild }}" == "true" ] || \
+             [ "${{ github.event_name }}" == "push" ] || \
+             [ "${{ github.event_name }}" == "pull_request" ] || \
+             [ "${UPSTREAM_SHA}" != "${LAST_SHA}" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-linux-x86_64:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Install build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+      
+      - name: Build llama.cpp
+        run: |
+          python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-x86_64-cpu
+          path: dist/*.whl
+
+  build-linux-x86_64-cuda:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3 python3-pip python3-venv git cmake build-essential
+      
+      - name: Set up Python
+        run: |
+          python3 -m pip install --upgrade pip
+          pip3 install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp with CUDA
+        run: |
+          python3 scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal
+      
+      - name: Generate version
+        run: |
+          python3 scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python3 -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-linux-x86_64-cuda
+          path: dist/*.whl
+
+  build-macos-arm64:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp with Metal
+        run: |
+          python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-macos-arm64-metal
+          path: dist/*.whl
+
+  build-macos-x86_64:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp
+        run: |
+          python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-macos-x86_64
+          path: dist/*.whl
+
+  build-windows-x64:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp
+        run: |
+          python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows-x64-cpu
+          path: dist/*.whl
+
+  release:
+    needs: [build-linux-x86_64, build-linux-x86_64-cuda, build-macos-arm64, build-macos-x86_64, build-windows-x64]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all wheels
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: wheel-*
+          merge-multiple: true
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/*.whl
+          generate_release_notes: true
+      
+      - name: Publish to PyPI
+        if: startsWith(github.ref, 'refs/tags/') && env.PYPI_API_TOKEN != ''
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          pip install twine
+          twine upload dist/*.whl -u __token__ -p $PYPI_API_TOKEN

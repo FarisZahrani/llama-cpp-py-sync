@@ -1,0 +1,95 @@
+name: Sync Upstream
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # Every 6 hours
+  workflow_dispatch:
+    inputs:
+      force_sync:
+        description: 'Force sync even if no changes'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  LLAMA_CPP_REPO: https://github.com/ggerganov/llama.cpp.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Check for upstream changes
+        id: check
+        run: |
+          UPSTREAM_SHA=$(git ls-remote ${{ env.LLAMA_CPP_REPO }} HEAD | cut -f1)
+          echo "upstream_sha=${UPSTREAM_SHA}" >> $GITHUB_OUTPUT
+          
+          if [ -f .llama_cpp_sync_state.json ]; then
+            LAST_SHA=$(cat .llama_cpp_sync_state.json | jq -r '.last_sync_sha // ""')
+          else
+            LAST_SHA=""
+          fi
+          echo "last_sha=${LAST_SHA}" >> $GITHUB_OUTPUT
+          
+          if [ "${{ github.event.inputs.force_sync }}" == "true" ] || [ "${UPSTREAM_SHA}" != "${LAST_SHA}" ]; then
+            echo "needs_sync=true" >> $GITHUB_OUTPUT
+          else
+            echo "needs_sync=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Sync upstream
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          python scripts/sync_upstream.py --force
+      
+      - name: Regenerate bindings
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          pip install cffi
+          python scripts/gen_bindings.py --commit-sha ${{ steps.check.outputs.upstream_sha }}
+      
+      - name: Update version
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Commit changes
+        if: steps.check.outputs.needs_sync == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add .llama_cpp_sync_state.json
+          git add src/llama_cpp_py_sync/_cffi_bindings.py
+          git add src/llama_cpp_py_sync/_version.py
+          
+          UPSTREAM_SHORT=$(echo "${{ steps.check.outputs.upstream_sha }}" | cut -c1-8)
+          git commit -m "sync: update to llama.cpp ${UPSTREAM_SHORT}" || echo "No changes to commit"
+          git push
+      
+      - name: Trigger build workflow
+        if: steps.check.outputs.needs_sync == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build.yml',
+              ref: 'main',
+              inputs: {
+                force_rebuild: 'true'
+              }
+            })

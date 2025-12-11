@@ -1,0 +1,17 @@
+include LICENSE
+include README.md
+include pyproject.toml
+
+recursive-include src/llama_cpp_py_sync *.py *.pyi *.so *.dylib *.dll
+recursive-include scripts *.py
+
+prune vendor
+prune .github
+prune examples
+prune tests
+prune __pycache__
+prune *.egg-info
+
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude .DS_Store
