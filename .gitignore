@@ -98,6 +98,3 @@ Makefile
 *.gguf
 *.bin
 *.ggml
-
-# Sync state
-.llama_cpp_sync_state.json
