@@ -13,6 +13,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write
 
 env:
   LLAMA_CPP_REPO: https://github.com/ggerganov/llama.cpp.git
@@ -88,7 +89,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'build.yml',
-              ref: 'main',
+              ref: 'master',
               inputs: {
                 force_rebuild: 'true'
               }
