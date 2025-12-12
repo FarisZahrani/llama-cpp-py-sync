@@ -2,22 +2,21 @@
 
 **Auto-synchronized Python bindings for llama.cpp**
 
-[![Build Wheels](https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/actions/workflows/build.yml/badge.svg)](https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/actions/workflows/build.yml)
-[![Sync Upstream](https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/actions/workflows/sync.yml/badge.svg)](https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/actions/workflows/sync.yml)
+[![Build Wheels](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml)
+[![Sync Upstream](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml)
 [![PyPI version](https://badge.fury.io/py/llama-cpp-py-sync.svg)](https://badge.fury.io/py/llama-cpp-py-sync)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
 
-**llama-cpp-py-sync** solves the long-standing update lag problem in Python bindings for llama.cpp. Instead of manually maintaining bindings that fall behind upstream changes, this project uses **CFFI ABI mode** to automatically generate Python bindings directly from the upstream `llama.h` header file.
+**llama-cpp-py-sync** provides Python bindings for `llama.cpp` that are kept up-to-date automatically. It generates bindings from upstream headers using **CFFI ABI mode**, and ships prebuilt wheels.
 
 ### Key Features
 
-- 🔄 **Automatic Synchronization**: Bindings regenerate automatically when upstream llama.cpp changes
-- 🚀 **Zero Manual Updates**: No ctypes, no pybind11 maintenance - pure automation
-- 📦 **Pre-built Wheels**: Multi-platform wheels built automatically via CI
-- 🎯 **GPU Support**: CUDA, ROCm, Vulkan, Metal, and BLAS backends
-- 🐍 **Simple API**: High-level Pythonic interface for common operations
+- Automatic upstream sync and binding regeneration
+- Prebuilt wheels built by CI
+- Backends supported by upstream `llama.cpp` (CPU, CUDA, ROCm, Vulkan, Metal, BLAS)
+- A small, explicit Python API (`Llama.generate`, `tokenize`, `get_embeddings`, etc.)
 
 > **Note**: This is NOT a fork of llama-cpp-python. It's a completely different system designed for full automation.
 
@@ -29,20 +28,18 @@
 pip install llama-cpp-py-sync
 ```
 
-### From GitHub Releases
+### From GitHub Actions / Releases (Wheel)
 
-Download the appropriate wheel for your platform from [Releases](https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/releases):
+Download the wheel artifact for your platform and install the `.whl` inside it:
 
-- `*-linux-x86_64-cpu.whl` - Linux x64 CPU-only
-- `*-linux-x86_64-cuda.whl` - Linux x64 with CUDA
-- `*-macos-arm64-metal.whl` - macOS Apple Silicon with Metal
-- `*-macos-x86_64.whl` - macOS Intel
-- `*-windows-x64-cpu.whl` - Windows x64 CPU-only
+```bash
+pip install path/to/llama_cpp_py_sync-*.whl
+```
 
 ### From Source
 
 ```bash
-git clone https://github.com/llama-cpp-py-sync/llama-cpp-py-sync.git
+git clone https://github.com/FarisZahrani/llama-cpp-py-sync.git
 cd llama-cpp-py-sync
 
 # Sync upstream llama.cpp
@@ -54,6 +51,8 @@ python scripts/build_llama_cpp.py
 # Install the package
 pip install -e .
 ```
+
+`vendor/llama.cpp` is cloned at build-time and is not committed to this repository.
 
 ## Quick Start
 
@@ -102,6 +101,77 @@ info = get_backend_info()
 print(f"CUDA available: {info.cuda}")
 print(f"Metal available: {info.metal}")
 ```
+
+<details>
+<summary>Full API (click to expand)</summary>
+
+```python
+import llama_cpp_py_sync as llama
+
+# Versions
+llama.__version__
+llama.__llama_cpp_commit__
+
+# Main class
+llm = llama.Llama(
+    model_path="path/to/model.gguf",
+    n_ctx=512,
+    n_batch=512,
+    n_threads=None,
+    n_gpu_layers=0,
+    seed=-1,
+    use_mmap=True,
+    use_mlock=False,
+    verbose=False,
+    embedding=False,
+)
+
+text = llm.generate(
+    "Hello",
+    max_tokens=256,
+    temperature=0.8,
+    top_k=40,
+    top_p=0.95,
+    min_p=0.05,
+    repeat_penalty=1.1,
+    stop_sequences=None,
+    stream=False,
+)
+
+stream = llm.generate(
+    "Hello",
+    max_tokens=256,
+    stream=True,
+)
+
+tokens = llm.tokenize("Hello")
+text = llm.detokenize(tokens)
+piece = llm.token_to_piece(tokens[0])
+
+llm.get_model_desc()
+llm.get_model_size()
+llm.get_model_n_params()
+
+# Embeddings (requires embedding=True)
+emb = llm.get_embeddings("Hello")
+
+llm.close()
+
+# Module-level embeddings helpers
+llama.get_embeddings("path/to/model.gguf", "Hello")
+llama.get_embeddings_batch("path/to/model.gguf", ["Hello", "World"])
+
+# Backend helpers
+llama.get_available_backends()
+llama.get_backend_info()
+llama.is_cuda_available()
+llama.is_metal_available()
+llama.is_vulkan_available()
+llama.is_rocm_available()
+llama.is_blas_available()
+```
+
+</details>
 
 ## How It Works
 
@@ -283,7 +353,7 @@ llama-cpp-py-sync/
 │   ├── build_llama_cpp.py      # Build shared library
 │   └── auto_version.py         # Version generation
 ├── examples/                    # Example scripts
-├── vendor/llama.cpp/           # Upstream source (git ignored)
+├── vendor/llama.cpp/           # Upstream source (cloned at build time)
 ├── .github/workflows/          # CI/CD pipelines
 ├── pyproject.toml              # Package metadata
 └── README.md                   # This file

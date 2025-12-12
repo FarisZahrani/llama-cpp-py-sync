@@ -9,10 +9,10 @@ description = "Auto-synchronized Python bindings for llama.cpp using CFFI ABI mo
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "llama-cpp-py-sync Contributors"}
+    {name = "Faris Al-Zahrani"}
 ]
 maintainers = [
-    {name = "llama-cpp-py-sync Contributors"}
+    {name = "Faris Al-Zahrani"}
 ]
 keywords = [
     "llama",
@@ -59,10 +59,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/llama-cpp-py-sync/llama-cpp-py-sync"
-Repository = "https://github.com/llama-cpp-py-sync/llama-cpp-py-sync"
-Documentation = "https://github.com/llama-cpp-py-sync/llama-cpp-py-sync#readme"
-Issues = "https://github.com/llama-cpp-py-sync/llama-cpp-py-sync/issues"
+Homepage = "https://github.com/FarisZahrani/llama-cpp-py-sync"
+Repository = "https://github.com/FarisZahrani/llama-cpp-py-sync"
+Documentation = "https://github.com/FarisZahrani/llama-cpp-py-sync#readme"
+Issues = "https://github.com/FarisZahrani/llama-cpp-py-sync/issues"
 
 [tool.setuptools]
 packages = ["llama_cpp_py_sync"]
