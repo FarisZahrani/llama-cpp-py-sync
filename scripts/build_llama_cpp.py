@@ -203,9 +203,12 @@ def run_cmake_configure(
     return result.returncode == 0
 
 
-def run_cmake_build(build_dir: Path, parallel: int = 0) -> bool:
+def run_cmake_build(build_dir: Path, parallel: int = 0, target: Optional[str] = None) -> bool:
     """Run CMake build."""
     cmd = ["cmake", "--build", str(build_dir), "--config", "Release"]
+
+    if target:
+        cmd.extend(["--target", target])
 
     if parallel > 0:
         cmd.extend(["--parallel", str(parallel)])
@@ -300,7 +303,7 @@ def build_llama_cpp(
         return None
 
     print("\nBuilding...")
-    if not run_cmake_build(build_dir, parallel=parallel):
+    if not run_cmake_build(build_dir, parallel=parallel, target="llama"):
         print("Error: Build failed", file=sys.stderr)
         return None
 
