@@ -157,7 +157,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential libvulkan-dev
+          sudo apt-get install -y cmake build-essential libvulkan-dev shaderc glslang-tools
       
       - name: Build llama.cpp with Vulkan
         run: |
