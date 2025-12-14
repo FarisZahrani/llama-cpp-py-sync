@@ -8,8 +8,8 @@ Generated: 2025-12-14T12:25:21.413905
 llama.cpp commit: 0759b09c90f9e1bb8beebe74882b9f094b91f7bb
 """
 
-import platform
 import os
+import platform
 from pathlib import Path
 
 from cffi import FFI
