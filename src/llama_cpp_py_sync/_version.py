@@ -1,4 +1,4 @@
 """Version information for llama-cpp-py-sync."""
 
-__version__ = "2025.12.15.1"
-__llama_cpp_commit__ = "9d52f17"
+__version__ = "2025.12.16.1"
+__llama_cpp_commit__ = "d6a1e18"
