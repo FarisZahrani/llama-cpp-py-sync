@@ -18,8 +18,6 @@
 - Backends supported by upstream `llama.cpp` (CPU, CUDA, ROCm, Vulkan, Metal, BLAS)
 - A small, explicit Python API (`Llama.generate`, `tokenize`, `get_embeddings`, etc.)
 
-> **Note**: This is NOT a fork of llama-cpp-python. It's a completely different system designed for full automation.
-
 ## Installation
 
 ### From PyPI (Recommended)

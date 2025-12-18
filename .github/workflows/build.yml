@@ -279,6 +279,103 @@ jobs:
       - name: Build llama.cpp
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+
+      - name: Bundle Windows runtime DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+          $requiredDlls = @(
+            # MSVC / OpenMP runtime
+            'vcruntime140.dll',
+            'vcruntime140_1.dll',
+            'msvcp140.dll',
+            'concrt140.dll',
+            'vcomp140.dll',
+
+            # CUDA runtime (optional - only bundled if found)
+            'cudart64_12.dll',
+            'cublas64_12.dll',
+            'cublasLt64_12.dll',
+            'cudnn64_8.dll',
+            'nvrtc64_120_0.dll',
+
+            # Vulkan loader (optional - only bundled if found)
+            'vulkan-1.dll'
+          )
+
+          function Copy-DllIfFound([string]$path) {
+            if (Test-Path $path) {
+              Copy-Item -Force $path $packageDir
+              Write-Host "Bundled: $path"
+              return $true
+            }
+            return $false
+          }
+
+          $searchDirs = @()
+
+          # 1) VS redist via environment variable when available
+          if ($env:VCToolsRedistDir) {
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64\Microsoft.VC143.CRT')
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64')
+          }
+
+          # 2) Common Visual Studio Redist locations
+          $pf86 = ${env:ProgramFiles(x86)}
+          if (-not $pf86) { $pf86 = 'C:\\Program Files (x86)' }
+          $vsRoot = Join-Path $pf86 'Microsoft Visual Studio'
+          if (Test-Path $vsRoot) {
+            $candidates = Get-ChildItem -Path $vsRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\VC\\Redist\\MSVC\\' -and $_.FullName -match '\\x64(\\Microsoft\.VC\d+\.CRT)?$' }
+            foreach ($dir in $candidates) {
+              $searchDirs += $dir.FullName
+            }
+          }
+
+          # 3) System folders
+          $searchDirs += (Join-Path $env:WINDIR 'System32')
+          $searchDirs += (Join-Path $env:WINDIR 'SysWOW64')
+
+          # 4) CUDA paths (prefer env CUDA_PATH)
+          if ($env:CUDA_PATH -and (Test-Path $env:CUDA_PATH)) {
+            $searchDirs += (Join-Path $env:CUDA_PATH 'bin')
+            $searchDirs += (Join-Path $env:CUDA_PATH 'lib')
+          }
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\bin'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\lib'
+          $searchDirs += 'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'
+
+          # 5) Vulkan paths (prefer env VULKAN_SDK)
+          if ($env:VULKAN_SDK -and (Test-Path $env:VULKAN_SDK)) {
+            $searchDirs += (Join-Path $env:VULKAN_SDK 'Bin')
+            $searchDirs += (Join-Path $env:VULKAN_SDK 'Lib')
+          }
+          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Bin'
+          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Lib'
+
+          # Normalize + unique existing dirs
+          $searchDirs = $searchDirs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          $found = @{}
+          foreach ($n in $requiredDlls) { $found[$n] = $false }
+
+          foreach ($n in $requiredDlls) {
+            foreach ($dir in $searchDirs) {
+              if (-not $found[$n]) {
+                $found[$n] = Copy-DllIfFound (Join-Path $dir $n)
+              }
+            }
+          }
+
+          $missing = @()
+          foreach ($n in $requiredDlls) { if (-not $found[$n]) { $missing += $n } }
+          if ($missing.Count -gt 0) {
+            Write-Warning "Some runtime DLLs were not found and could not be bundled (this is expected if CUDA/Vulkan SDKs are not installed on the runner): $($missing -join ', ')"
+          }
       
       - name: Generate version
         run: |
@@ -294,8 +391,251 @@ jobs:
           name: wheel-windows-x64-cpu
           path: dist/*.whl
 
+  build-windows-x64-cuda:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.29
+        with:
+          cuda: '12.1.1'
+          method: 'network'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp with CUDA
+        run: |
+          python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
+
+      - name: Bundle Windows runtime DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+          $requiredDlls = @(
+            # MSVC / OpenMP runtime
+            'vcruntime140.dll',
+            'vcruntime140_1.dll',
+            'msvcp140.dll',
+            'concrt140.dll',
+            'vcomp140.dll',
+
+            # CUDA runtime
+            'cudart64_12.dll',
+            'cublas64_12.dll',
+            'cublasLt64_12.dll',
+            'cudnn64_8.dll',
+            'nvrtc64_120_0.dll'
+          )
+
+          function Copy-DllIfFound([string]$path) {
+            if (Test-Path $path) {
+              Copy-Item -Force $path $packageDir
+              Write-Host "Bundled: $path"
+              return $true
+            }
+            return $false
+          }
+
+          $searchDirs = @()
+
+          if ($env:VCToolsRedistDir) {
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64\Microsoft.VC143.CRT')
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64')
+          }
+
+          $pf86 = ${env:ProgramFiles(x86)}
+          if (-not $pf86) { $pf86 = 'C:\\Program Files (x86)' }
+          $vsRoot = Join-Path $pf86 'Microsoft Visual Studio'
+          if (Test-Path $vsRoot) {
+            $candidates = Get-ChildItem -Path $vsRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\VC\\Redist\\MSVC\\' -and $_.FullName -match '\\x64(\\Microsoft\.VC\d+\.CRT)?$' }
+            foreach ($dir in $candidates) {
+              $searchDirs += $dir.FullName
+            }
+          }
+
+          $searchDirs += (Join-Path $env:WINDIR 'System32')
+          $searchDirs += (Join-Path $env:WINDIR 'SysWOW64')
+
+          if ($env:CUDA_PATH -and (Test-Path $env:CUDA_PATH)) {
+            $searchDirs += (Join-Path $env:CUDA_PATH 'bin')
+            $searchDirs += (Join-Path $env:CUDA_PATH 'lib')
+          }
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\bin'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\lib'
+          $searchDirs += 'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'
+
+          $searchDirs = $searchDirs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          $found = @{}
+          foreach ($n in $requiredDlls) { $found[$n] = $false }
+
+          foreach ($n in $requiredDlls) {
+            foreach ($dir in $searchDirs) {
+              if (-not $found[$n]) {
+                $found[$n] = Copy-DllIfFound (Join-Path $dir $n)
+              }
+            }
+          }
+
+          $missing = @()
+          foreach ($n in $requiredDlls) { if (-not $found[$n]) { $missing += $n } }
+          if ($missing.Count -gt 0) {
+            Write-Warning "Some runtime DLLs were not found and could not be bundled: $($missing -join ', ')"
+          }
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows-x64-cuda
+          path: dist/*.whl
+
+  build-windows-x64-vulkan:
+    needs: check-upstream
+    if: needs.check-upstream.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Vulkan SDK
+        uses: jakoch/install-vulkan-sdk-action@v1
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
+      
+      - name: Clone llama.cpp
+        run: |
+          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+      
+      - name: Build llama.cpp with Vulkan
+        run: |
+          python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-metal
+
+      - name: Bundle Windows runtime DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+          $requiredDlls = @(
+            # MSVC runtime (OpenMP might not be used for Vulkan builds but bundling is harmless)
+            'vcruntime140.dll',
+            'vcruntime140_1.dll',
+            'msvcp140.dll',
+            'concrt140.dll',
+            'vcomp140.dll',
+            # Vulkan loader
+            'vulkan-1.dll'
+          )
+
+          function Copy-DllIfFound([string]$path) {
+            if (Test-Path $path) {
+              Copy-Item -Force $path $packageDir
+              Write-Host "Bundled: $path"
+              return $true
+            }
+            return $false
+          }
+
+          $searchDirs = @()
+
+          if ($env:VCToolsRedistDir) {
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64\Microsoft.VC143.CRT')
+            $searchDirs += (Join-Path $env:VCToolsRedistDir 'x64')
+          }
+
+          $pf86 = ${env:ProgramFiles(x86)}
+          if (-not $pf86) { $pf86 = 'C:\\Program Files (x86)' }
+          $vsRoot = Join-Path $pf86 'Microsoft Visual Studio'
+          if (Test-Path $vsRoot) {
+            $candidates = Get-ChildItem -Path $vsRoot -Recurse -Directory -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '\\VC\\Redist\\MSVC\\' -and $_.FullName -match '\\x64(\\Microsoft\.VC\d+\.CRT)?$' }
+            foreach ($dir in $candidates) {
+              $searchDirs += $dir.FullName
+            }
+          }
+
+          $searchDirs += (Join-Path $env:WINDIR 'System32')
+          $searchDirs += (Join-Path $env:WINDIR 'SysWOW64')
+
+          if ($env:VULKAN_SDK -and (Test-Path $env:VULKAN_SDK)) {
+            $searchDirs += (Join-Path $env:VULKAN_SDK 'Bin')
+            $searchDirs += (Join-Path $env:VULKAN_SDK 'Lib')
+          }
+          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Bin'
+          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Lib'
+
+          $searchDirs = $searchDirs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+          $found = @{}
+          foreach ($n in $requiredDlls) { $found[$n] = $false }
+
+          foreach ($n in $requiredDlls) {
+            foreach ($dir in $searchDirs) {
+              if (-not $found[$n]) {
+                $found[$n] = Copy-DllIfFound (Join-Path $dir $n)
+              }
+            }
+          }
+
+          $missing = @()
+          foreach ($n in $requiredDlls) { if (-not $found[$n]) { $missing += $n } }
+          if ($missing.Count -gt 0) {
+            Write-Warning "Some runtime DLLs were not found and could not be bundled: $($missing -join ', ')"
+          }
+      
+      - name: Generate version
+        run: |
+          python scripts/auto_version.py --update
+      
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+      
+      - name: Upload wheel
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-windows-x64-vulkan
+          path: dist/*.whl
+
   release:
-    needs: [build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64]
+    needs: [build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64, build-windows-x64-cuda, build-windows-x64-vulkan]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     permissions:
