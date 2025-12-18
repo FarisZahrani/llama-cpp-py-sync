@@ -345,8 +345,8 @@ jobs:
             $searchDirs += (Join-Path $env:CUDA_PATH 'bin')
             $searchDirs += (Join-Path $env:CUDA_PATH 'lib')
           }
-          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\bin'
-          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\lib'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\lib'
           $searchDirs += 'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'
 
           # 5) Vulkan paths (prefer env VULKAN_SDK)
@@ -406,7 +406,7 @@ jobs:
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.29
         with:
-          cuda: '12.1.1'
+          cuda: '12.4.1'
           method: 'network'
 
       - name: Install dependencies

@@ -9,9 +9,9 @@ llama.cpp commit: 4301e27319eadb8e129e91a0d9a4c96d9e2f6f15
 """
 
 import os
-import sys
 import platform
 from pathlib import Path
+
 from cffi import FFI
 
 ffi = FFI()
@@ -419,7 +419,6 @@ def _find_library():
     lib_dir = Path(__file__).parent
 
     system = platform.system().lower()
-    machine = platform.machine().lower()
 
     if system == "windows":
         lib_names = ["llama.dll", "libllama.dll"]
@@ -484,7 +483,7 @@ def _load_library():
                 pass
         return ffi.dlopen(lib_path)
     except OSError as e:
-        raise RuntimeError(f"Failed to load llama.cpp library from {lib_path}: {e}")
+        raise RuntimeError(f"Failed to load llama.cpp library from {lib_path}: {e}") from e
 
 
 _lib = None
