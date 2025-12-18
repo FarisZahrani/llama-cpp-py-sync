@@ -58,7 +58,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install dependencies
         run: |
@@ -85,6 +85,11 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (linux)
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag manylinux2014_x86_64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -96,20 +101,29 @@ jobs:
     needs: check-upstream
     if: needs.check-upstream.outputs.should_build == 'true'
     runs-on: ubuntu-latest
-    container:
-      image: nvidia/cuda:12.2.0-devel-ubuntu22.04
     steps:
       - uses: actions/checkout@v4
-      
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Install CUDA Toolkit
+        uses: Jimver/cuda-toolkit@v0.2.29
+        with:
+          cuda: '12.2.0'
+          method: 'network'
+
       - name: Install system dependencies
         run: |
-          apt-get update
-          apt-get install -y python3 python3-pip python3-venv git cmake build-essential
-      
-      - name: Set up Python
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+
+      - name: Install dependencies
         run: |
-          python3 -m pip install --upgrade pip
-          pip3 install build wheel cffi numpy
+          python -m pip install --upgrade pip
+          pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
         run: |
@@ -117,15 +131,20 @@ jobs:
       
       - name: Build llama.cpp with CUDA
         run: |
-          python3 scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
+          python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
       
       - name: Generate version
         run: |
-          python3 scripts/auto_version.py --update
+          python scripts/auto_version.py --update
       
       - name: Build wheel
         run: |
-          python3 -m build --wheel
+          python -m build --wheel
+
+      - name: Retag wheel (linux)
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag manylinux2014_x86_64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -143,7 +162,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install dependencies
         run: |
@@ -170,6 +189,11 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (linux)
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag manylinux2014_x86_64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -187,7 +211,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install dependencies
         run: |
@@ -209,6 +233,11 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (macos)
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag macosx_14_0_arm64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -226,7 +255,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install dependencies
         run: |
@@ -248,6 +277,11 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (macos)
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag macosx_14_0_x86_64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -265,7 +299,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install dependencies
         run: |
@@ -384,6 +418,12 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (windows)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag win_amd64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -401,7 +441,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
 
       - name: Install CUDA Toolkit
         uses: Jimver/cuda-toolkit@v0.2.29
@@ -480,8 +520,8 @@ jobs:
             $searchDirs += (Join-Path $env:CUDA_PATH 'bin')
             $searchDirs += (Join-Path $env:CUDA_PATH 'lib')
           }
-          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\bin'
-          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.1\\lib'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\bin'
+          $searchDirs += 'C:\\Program Files\\NVIDIA GPU Computing Toolkit\\CUDA\\v12.4\\lib'
           $searchDirs += 'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'
 
           $searchDirs = $searchDirs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
@@ -510,6 +550,12 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (windows)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag win_amd64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
@@ -527,7 +573,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
 
       - name: Install Vulkan SDK
         uses: jakoch/install-vulkan-sdk-action@v1
@@ -627,6 +673,12 @@ jobs:
       - name: Build wheel
         run: |
           python -m build --wheel
+
+      - name: Retag wheel (windows)
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade wheel
+          python -m wheel tags --platform-tag win_amd64 dist/*.whl
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4

@@ -7,6 +7,23 @@ on:
     branches: [main, master]
 
 jobs:
+  config:
+    runs-on: ubuntu-latest
+    outputs:
+      test_pythons: ${{ steps.cfg.outputs.test_pythons }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+
+      - name: Read CI config
+        id: cfg
+        run: |
+          python -c "import json, tomllib; from pathlib import Path; data = tomllib.load(open('pyproject.toml', 'rb')); p = data.get('tool', {}).get('llama_cpp_py_sync', {}).get('ci', {}).get('test_pythons', ['3.11']); print('test_pythons=' + json.dumps(p))" >> $GITHUB_OUTPUT
+
   lint:
     runs-on: ubuntu-latest
     steps:
@@ -15,7 +32,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version-file: .python-version
       
       - name: Install linting tools
         run: |
@@ -26,12 +43,13 @@ jobs:
         run: ruff check src/ scripts/
 
   test:
+    needs: config
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.9', '3.10', '3.11', '3.12']
+        python-version: ${{ fromJson(needs.config.outputs.test_pythons) }}
     
     steps:
       - uses: actions/checkout@v4

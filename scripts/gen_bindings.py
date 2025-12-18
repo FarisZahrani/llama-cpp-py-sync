@@ -665,6 +665,18 @@ def _load_library():
         )
 
     try:
+        if platform.system().lower() == "windows":
+            lib_dir = str(Path(lib_path).parent)
+            try:
+                if hasattr(os, "add_dll_directory"):
+                    os.add_dll_directory(lib_dir)
+            except Exception:
+                pass
+            try:
+                os.environ["PATH"] = lib_dir + os.pathsep + os.environ.get("PATH", "")
+            except Exception:
+                pass
+
         return ffi.dlopen(lib_path)
     except OSError as e:
         raise RuntimeError(f"Failed to load llama.cpp library from {{lib_path}}: {{e}}") from e

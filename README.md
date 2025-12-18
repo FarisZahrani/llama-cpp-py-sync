@@ -20,6 +20,8 @@
 
 ## Installation
 
+This project supports **Python 3.8+**. During the current testing phase, CI builds are pinned to **Python 3.11.9** for reproducibility, but the published wheels are intended to work across supported Python versions.
+
 ### From PyPI (Recommended)
 
 ```bash

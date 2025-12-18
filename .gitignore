@@ -72,7 +72,7 @@ venv.bak/
 .ipynb_checkpoints
 
 # pyenv
-.python-version
+# .python-version
 
 # mypy
 .mypy_cache/
