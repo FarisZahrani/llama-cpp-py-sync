@@ -132,6 +132,22 @@ jobs:
       - name: Build llama.cpp with CUDA
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
+
+      - name: Bundle llama.cpp dependency DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'vendor\llama.cpp\build'
+          if (-not (Test-Path $buildDir)) {
+            Write-Host "llama.cpp build dir not found: $buildDir"
+            exit 0
+          }
+          $depDlls = Get-ChildItem -Path $buildDir -Recurse -Filter 'ggml*.dll' -ErrorAction SilentlyContinue
+          foreach ($d in $depDlls) {
+            Copy-Item -Force $d.FullName $packageDir
+            Write-Host "Bundled llama.cpp dep: $($d.FullName)"
+          }
       
       - name: Generate version
         run: |
@@ -269,6 +285,22 @@ jobs:
       - name: Build llama.cpp
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+
+      - name: Bundle llama.cpp dependency DLLs
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'vendor\llama.cpp\build'
+          if (-not (Test-Path $buildDir)) {
+            Write-Host "llama.cpp build dir not found: $buildDir"
+            exit 0
+          }
+          $depDlls = Get-ChildItem -Path $buildDir -Recurse -Filter 'ggml*.dll' -ErrorAction SilentlyContinue
+          foreach ($d in $depDlls) {
+            Copy-Item -Force $d.FullName $packageDir
+            Write-Host "Bundled llama.cpp dep: $($d.FullName)"
+          }
       
       - name: Generate version
         run: |
@@ -428,12 +460,15 @@ jobs:
           foreach ($w in $wheels) {
             python -m wheel tags --platform-tag win_amd64 $w.FullName
           }
+          Get-ChildItem -Path dist -Filter *.whl |
+            Where-Object { $_.Name -notmatch 'win_amd64\.whl$' } |
+            Remove-Item -Force
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheel-windows-x64-cpu
-          path: dist/*.whl
+          path: dist/*win_amd64.whl
 
   build-windows-x64-cuda:
     needs: check-upstream
@@ -564,12 +599,15 @@ jobs:
           foreach ($w in $wheels) {
             python -m wheel tags --platform-tag win_amd64 $w.FullName
           }
+          Get-ChildItem -Path dist -Filter *.whl |
+            Where-Object { $_.Name -notmatch 'win_amd64\.whl$' } |
+            Remove-Item -Force
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheel-windows-x64-cuda
-          path: dist/*.whl
+          path: dist/*win_amd64.whl
 
   build-windows-x64-vulkan:
     needs: check-upstream
@@ -691,12 +729,15 @@ jobs:
           foreach ($w in $wheels) {
             python -m wheel tags --platform-tag win_amd64 $w.FullName
           }
+          Get-ChildItem -Path dist -Filter *.whl |
+            Where-Object { $_.Name -notmatch 'win_amd64\.whl$' } |
+            Remove-Item -Force
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
           name: wheel-windows-x64-vulkan
-          path: dist/*.whl
+          path: dist/*win_amd64.whl
 
   release:
     needs: [build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64, build-windows-x64-cuda, build-windows-x64-vulkan]

@@ -22,6 +22,23 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent.resolve()
 
 
+def _require_build_tools() -> None:
+    if shutil.which("cmake") is None:
+        raise RuntimeError(
+            "CMake was not found in PATH. Install CMake and ensure `cmake` is available, "
+            "or install a prebuilt wheel that bundles the llama shared library."
+        )
+
+    if platform.system().lower() == "windows":
+        # CMake on Windows typically needs a compiler toolchain available.
+        # We can't reliably validate every setup, but we can catch the common missing-tool case.
+        if shutil.which("cl") is None and shutil.which("ninja") is None and shutil.which("mingw32-make") is None:
+            raise RuntimeError(
+                "No C/C++ build toolchain was detected (missing `cl`, `ninja`, and `mingw32-make`). "
+                "Install 'Visual Studio Build Tools' (MSVC) or Ninja and try again."
+            )
+
+
 def detect_cuda() -> Tuple[bool, Optional[str]]:
     """Detect if CUDA is available and return version."""
     cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
@@ -193,18 +210,25 @@ def run_cmake_configure(
     cmake_args: List[str],
 ) -> bool:
     """Run CMake configuration."""
+    _require_build_tools()
     build_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = ["cmake", str(source_dir)] + cmake_args
 
     print(f"Running: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd, cwd=build_dir)
+    try:
+        result = subprocess.run(cmd, cwd=build_dir)
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Failed to run CMake. Ensure CMake is installed and available on PATH."
+        ) from e
     return result.returncode == 0
 
 
 def run_cmake_build(build_dir: Path, parallel: int = 0, target: Optional[str] = None) -> bool:
     """Run CMake build."""
+    _require_build_tools()
     cmd = ["cmake", "--build", str(build_dir), "--config", "Release"]
 
     if target:
@@ -217,7 +241,12 @@ def run_cmake_build(build_dir: Path, parallel: int = 0, target: Optional[str] = 
 
     print(f"Running: {' '.join(cmd)}")
 
-    result = subprocess.run(cmd)
+    try:
+        result = subprocess.run(cmd)
+    except FileNotFoundError as e:
+        raise RuntimeError(
+            "Failed to run CMake build. Ensure CMake is installed and available on PATH."
+        ) from e
     return result.returncode == 0
 
 
@@ -240,6 +269,28 @@ def find_built_library(build_dir: Path) -> Optional[Path]:
     return None
 
 
+def _copy_windows_dependency_dlls(lib_path: Path, package_dir: Path) -> None:
+    lib_dir = lib_path.parent
+    patterns = ["ggml*.dll"]
+
+    copied_any = False
+    for pattern in patterns:
+        for dep_path in lib_dir.glob(pattern):
+            if dep_path.name.lower() == lib_path.name.lower():
+                continue
+
+            dest_path = package_dir / dep_path.name
+            shutil.copy2(dep_path, dest_path)
+            copied_any = True
+            print(f"Copied {dep_path} to {dest_path}")
+
+    if not copied_any:
+        print(
+            "Note: no ggml*.dll dependencies were found next to the built llama.dll. "
+            "If you still see Windows error 0x7e at runtime, the missing dependency is likely a system/runtime DLL."
+        )
+
+
 def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
     """Copy the built library to the package directory."""
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -248,6 +299,10 @@ def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
     shutil.copy2(lib_path, dest_path)
 
     print(f"Copied {lib_path} to {dest_path}")
+
+    if platform.system().lower() == "windows" and lib_path.suffix.lower() == ".dll":
+        _copy_windows_dependency_dlls(lib_path, package_dir)
+
     return dest_path
 
 

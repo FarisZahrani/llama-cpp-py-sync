@@ -1,6 +1,8 @@
 import os
 import subprocess
 import sys
+import importlib.util
+import shutil
 from pathlib import Path
 
 
@@ -19,12 +21,28 @@ def _ensure_llama_library() -> None:
     repo_root = _repo_root()
     package_dir = repo_root / "src" / "llama_cpp_py_sync"
 
+    spec = importlib.util.find_spec("llama_cpp_py_sync")
+    if spec and spec.origin:
+        installed_package_dir = Path(spec.origin).resolve().parent
+    else:
+        installed_package_dir = None
+
     dll_candidates = [
         package_dir / "llama.dll",
         package_dir / "libllama.dll",
         package_dir / "libllama.so",
         package_dir / "libllama.dylib",
     ]
+
+    if installed_package_dir:
+        dll_candidates.extend(
+            [
+                installed_package_dir / "llama.dll",
+                installed_package_dir / "libllama.dll",
+                installed_package_dir / "libllama.so",
+                installed_package_dir / "libllama.dylib",
+            ]
+        )
 
     if any(p.exists() for p in dll_candidates):
         return
@@ -33,6 +51,12 @@ def _ensure_llama_library() -> None:
     if not vendor_dir.exists():
         raise RuntimeError(
             "vendor/llama.cpp not found. Run: git clone https://github.com/ggerganov/llama.cpp.git vendor/llama.cpp"
+        )
+
+    if shutil.which("cmake") is None:
+        raise RuntimeError(
+            "CMake was not found in PATH, so the local llama.cpp build cannot run. "
+            "Either install CMake + C++ build tools, or install a prebuilt wheel that bundles llama.dll."
         )
 
     cmd = [
