@@ -26,6 +26,11 @@ jobs:
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
       
       - name: Check upstream for changes
         id: check
@@ -72,7 +77,11 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y cmake ninja-build build-essential
+
+      - name: Regenerate bindings from vendored llama.cpp
+        run: |
+          python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp
         run: |
@@ -118,7 +127,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential
+          sudo apt-get install -y cmake ninja-build build-essential
 
       - name: Install dependencies
         run: |
@@ -128,6 +137,10 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Regenerate bindings from vendored llama.cpp
+        run: |
+          python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp with CUDA
         run: |
@@ -192,7 +205,11 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential libvulkan-dev glslc glslang-tools
+          sudo apt-get install -y cmake ninja-build build-essential libvulkan-dev glslc glslang-tools
+
+      - name: Regenerate bindings from vendored llama.cpp
+        run: |
+          python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp with Vulkan
         run: |
@@ -237,6 +254,14 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Install build tools
+        run: |
+          brew install cmake ninja
+
+      - name: Regenerate bindings from vendored llama.cpp
+        run: |
+          python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp with Metal
         run: |
@@ -281,6 +306,14 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Install build tools
+        run: |
+          brew install cmake ninja
+
+      - name: Regenerate bindings from vendored llama.cpp
+        run: |
+          python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp
         run: |
@@ -341,6 +374,17 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Install Ninja
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+      - name: Regenerate bindings from vendored llama.cpp
+        shell: pwsh
+        run: |
+          $sha = git -C vendor/llama.cpp rev-parse HEAD
+          python scripts/gen_bindings.py --commit-sha $sha
       
       - name: Build llama.cpp
         run: |
@@ -496,6 +540,17 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Install Ninja
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+      - name: Regenerate bindings from vendored llama.cpp
+        shell: pwsh
+        run: |
+          $sha = git -C vendor/llama.cpp rev-parse HEAD
+          python scripts/gen_bindings.py --commit-sha $sha
       
       - name: Build llama.cpp with CUDA
         run: |
@@ -632,6 +687,17 @@ jobs:
       - name: Clone llama.cpp
         run: |
           git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+
+      - name: Install Ninja
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+      - name: Regenerate bindings from vendored llama.cpp
+        shell: pwsh
+        run: |
+          $sha = git -C vendor/llama.cpp rev-parse HEAD
+          python scripts/gen_bindings.py --commit-sha $sha
       
       - name: Build llama.cpp with Vulkan
         run: |

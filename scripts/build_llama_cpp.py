@@ -23,6 +23,12 @@ def get_project_root() -> Path:
 
 
 def _require_build_tools() -> None:
+    if shutil.which("ninja") is None:
+        raise RuntimeError(
+            "Ninja was not found in PATH. Install Ninja and ensure `ninja` is available. "
+            "(This project uses Ninja for builds.)"
+        )
+
     if shutil.which("cmake") is None:
         raise RuntimeError(
             "CMake was not found in PATH. Install CMake and ensure `cmake` is available, "
@@ -156,6 +162,7 @@ def get_cmake_args(
 ) -> List[str]:
     """Get CMake configuration arguments based on detected backends."""
     args = [
+        "-DCMAKE_BUILD_TYPE=Release",
         "-DBUILD_SHARED_LIBS=ON",
         "-DLLAMA_BUILD_TESTS=OFF",
         "-DLLAMA_BUILD_EXAMPLES=OFF",
@@ -213,7 +220,9 @@ def run_cmake_configure(
     _require_build_tools()
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = ["cmake", str(source_dir)] + cmake_args
+    # Force Ninja so we have a single, consistent build toolchain.
+    # NOTE: CMake is still used to generate the Ninja build files.
+    cmd = ["cmake", "-G", "Ninja", str(source_dir)] + cmake_args
 
     print(f"Running: {' '.join(cmd)}")
 
@@ -229,7 +238,7 @@ def run_cmake_configure(
 def run_cmake_build(build_dir: Path, parallel: int = 0, target: Optional[str] = None) -> bool:
     """Run CMake build."""
     _require_build_tools()
-    cmd = ["cmake", "--build", str(build_dir), "--config", "Release"]
+    cmd = ["cmake", "--build", str(build_dir)]
 
     if target:
         cmd.extend(["--target", target])

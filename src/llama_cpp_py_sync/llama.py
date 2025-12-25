@@ -78,6 +78,7 @@ class Llama:
         self._model = None
         self._ctx = None
         self._sampler = None
+        self._vocab = None
         self._verbose = verbose
         self._embedding = embedding
         self._n_ctx = n_ctx
@@ -92,9 +93,12 @@ class Llama:
         if self._verbose:
             print(f"Loading model from {model_path}...")
 
-        self._model = self._lib.llama_load_model_from_file(
+        load_model = getattr(self._lib, "llama_model_load_from_file", None) or getattr(
+            self._lib, "llama_load_model_from_file"
+        )
+        self._model = load_model(
             model_path.encode("utf-8"),
-            model_params
+            model_params,
         )
 
         if self._model == self._ffi.NULL:
@@ -106,16 +110,33 @@ class Llama:
         ctx_params.n_threads = n_threads if n_threads else os.cpu_count() or 4
         ctx_params.n_threads_batch = ctx_params.n_threads
         ctx_params.embeddings = embedding
-        ctx_params.flash_attn = True
+        # Flash attention is controlled via an enum in llama.cpp.
+        flash_env = os.environ.get("LLAMA_FLASH_ATTENTION", "0").strip()
+        if flash_env.lower() in ("auto", "-1"):
+            ctx_params.flash_attn_type = -1
+        elif flash_env.lower() not in ("0", "", "false", "off", "disabled"):
+            ctx_params.flash_attn_type = 1
+        else:
+            ctx_params.flash_attn_type = 0
 
         if seed != -1:
             pass
 
-        self._ctx = self._lib.llama_new_context_with_model(self._model, ctx_params)
+        init_ctx = getattr(self._lib, "llama_init_from_model", None) or getattr(
+            self._lib, "llama_new_context_with_model"
+        )
+        self._ctx = init_ctx(self._model, ctx_params)
 
         if self._ctx == self._ffi.NULL:
-            self._lib.llama_free_model(self._model)
+            free_model = getattr(self._lib, "llama_model_free", None) or getattr(self._lib, "llama_free_model")
+            free_model(self._model)
             raise RuntimeError("Failed to create model context")
+
+        get_vocab = getattr(self._lib, "llama_model_get_vocab", None)
+        if get_vocab is not None:
+            self._vocab = get_vocab(self._model)
+            if self._vocab == self._ffi.NULL:
+                self._vocab = None
 
         self._setup_sampler(seed)
 
@@ -166,7 +187,8 @@ class Llama:
             self._lib.llama_free(self._ctx)
             self._ctx = None
         if hasattr(self, "_model") and self._model is not None:
-            self._lib.llama_free_model(self._model)
+            free_model = getattr(self._lib, "llama_model_free", None) or getattr(self._lib, "llama_free_model")
+            free_model(self._model)
             self._model = None
 
     def __enter__(self):
@@ -179,7 +201,14 @@ class Llama:
     @property
     def n_vocab(self) -> int:
         """Get vocabulary size."""
-        return self._lib.llama_n_vocab(self._model)
+        if self._vocab is not None:
+            n_tokens = getattr(self._lib, "llama_vocab_n_tokens", None)
+            if n_tokens is not None:
+                return int(n_tokens(self._vocab))
+            n_vocab = getattr(self._lib, "llama_n_vocab", None)
+            if n_vocab is not None:
+                return int(n_vocab(self._vocab))
+        raise RuntimeError("Vocab handle is not available; bindings may be out of sync")
 
     @property
     def n_ctx(self) -> int:
@@ -199,12 +228,22 @@ class Llama:
     @property
     def bos_token(self) -> int:
         """Get beginning-of-sequence token ID."""
-        return self._lib.llama_token_bos(self._model)
+        if self._vocab is None:
+            raise RuntimeError("Vocab handle is not available; bindings may be out of sync")
+        fn = getattr(self._lib, "llama_vocab_bos", None) or getattr(self._lib, "llama_token_bos", None)
+        if fn is None:
+            raise RuntimeError("No BOS token API available in llama library")
+        return int(fn(self._vocab))
 
     @property
     def eos_token(self) -> int:
         """Get end-of-sequence token ID."""
-        return self._lib.llama_token_eos(self._model)
+        if self._vocab is None:
+            raise RuntimeError("Vocab handle is not available; bindings may be out of sync")
+        fn = getattr(self._lib, "llama_vocab_eos", None) or getattr(self._lib, "llama_token_eos", None)
+        if fn is None:
+            raise RuntimeError("No EOS token API available in llama library")
+        return int(fn(self._vocab))
 
     def tokenize(
         self,
@@ -229,7 +268,7 @@ class Llama:
         tokens = self._ffi.new(f"llama_token[{max_tokens}]")
 
         n_tokens = self._lib.llama_tokenize(
-            self._model,
+            self._vocab,
             text_bytes,
             len(text_bytes),
             tokens,
@@ -242,7 +281,7 @@ class Llama:
             max_tokens = -n_tokens
             tokens = self._ffi.new(f"llama_token[{max_tokens}]")
             n_tokens = self._lib.llama_tokenize(
-                self._model,
+                self._vocab,
                 text_bytes,
                 len(text_bytes),
                 tokens,
@@ -281,7 +320,7 @@ class Llama:
         buf = self._ffi.new(f"char[{buf_size}]")
 
         n_chars = self._lib.llama_detokenize(
-            self._model,
+            self._vocab,
             tokens_arr,
             len(tokens),
             buf,
@@ -294,7 +333,7 @@ class Llama:
             buf_size = -n_chars
             buf = self._ffi.new(f"char[{buf_size}]")
             n_chars = self._lib.llama_detokenize(
-                self._model,
+                self._vocab,
                 tokens_arr,
                 len(tokens),
                 buf,
@@ -308,7 +347,7 @@ class Llama:
     def token_to_piece(self, token: int) -> str:
         """Convert a single token to its string representation."""
         buf = self._ffi.new("char[128]")
-        n = self._lib.llama_token_to_piece(self._model, token, buf, 128, 0, False)
+        n = self._lib.llama_token_to_piece(self._vocab, token, buf, 128, 0, False)
         if n < 0:
             return ""
         return self._ffi.string(buf, n).decode("utf-8", errors="replace")
@@ -369,7 +408,10 @@ class Llama:
         Returns:
             Generated text (or iterator if stream=True).
         """
-        self._lib.llama_kv_cache_clear(self._ctx)
+        try:
+            self._lib.llama_kv_cache_clear(self._ctx)
+        except AttributeError:
+            pass
         self._lib.llama_sampler_reset(self._sampler)
 
         if hasattr(self, "_sampler") and self._sampler is not None:
@@ -458,7 +500,10 @@ class Llama:
         if not self._embedding:
             raise RuntimeError("Model was not loaded with embedding=True")
 
-        self._lib.llama_kv_cache_clear(self._ctx)
+        try:
+            self._lib.llama_kv_cache_clear(self._ctx)
+        except AttributeError:
+            pass
 
         tokens = self.tokenize(text, add_special=True)
 

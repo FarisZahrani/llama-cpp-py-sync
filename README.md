@@ -45,6 +45,10 @@ cd llama-cpp-py-sync
 # Sync upstream llama.cpp
 python scripts/sync_upstream.py
 
+# Regenerate CFFI bindings from the synced llama.cpp headers
+# (Optional) record the exact llama.cpp commit SHA in the generated file.
+python scripts/gen_bindings.py --commit-sha "$(python scripts/sync_upstream.py --sha)"
+
 # Build the shared library
 python scripts/build_llama_cpp.py
 
@@ -52,7 +56,7 @@ python scripts/build_llama_cpp.py
 pip install -e .
 ```
 
-`vendor/llama.cpp` is cloned at build-time and is not committed to this repository.
+`vendor/llama.cpp` is cloned locally by `scripts/sync_upstream.py` (and in CI during builds) and is not committed to this repository.
 
 ## Quick Start
 
@@ -180,7 +184,7 @@ llama.is_blas_available()
 1. **Scheduled Checks**: GitHub Actions checks upstream llama.cpp every 6 hours
 2. **SHA Comparison**: Compares upstream HEAD with last synced commit
 3. **Auto-Sync**: If changes detected, pulls latest code automatically
-4. **Binding Regeneration**: `gen_bindings.py` regenerates CFFI bindings from headers
+4. **Binding Regeneration**: `gen_bindings.py` regenerates CFFI declarations from the synced headers (and records the commit SHA when provided)
 5. **Wheel Building**: CI builds wheels for all platforms
 6. **Auto-Release**: New wheels published to GitHub Releases (and PyPI if configured)
 
@@ -300,12 +304,30 @@ See the `examples/` directory:
 - `backend_info.py` - Check available GPU backends
 - `benchmark.py` - Measure token throughput
 
+## Smoke Test / Chat CLI
+
+This repository includes an interactive smoke test that can run either as a one-shot prompt (CI-friendly) or as a back-and-forth chat.
+
+```bash
+# Interactive chat (Ctrl+C or blank line to exit)
+python scripts/smoke_test_chat.py
+
+# One-shot prompt
+python scripts/smoke_test_chat.py --prompt "Say 'ok'." --max-tokens 16
+
+# Use a specific model
+python scripts/smoke_test_chat.py --model path/to/model.gguf
+```
+
+By default it uses `LLAMA_MODEL` if set, otherwise it falls back to the repo's bundled model (if present).
+
 ## Building from Source
 
 ### Prerequisites
 
 - Python 3.8+
-- CMake 3.14+
+- Ninja
+- CMake (configure step)
 - C/C++ compiler (GCC, Clang, MSVC)
 - Git
 
@@ -319,6 +341,10 @@ cd llama-cpp-py-sync
 # Sync upstream llama.cpp
 python scripts/sync_upstream.py
 
+# Regenerate bindings from the synced llama.cpp headers
+# (Optional) record the exact llama.cpp commit SHA in the generated file.
+python scripts/gen_bindings.py --commit-sha "$(python scripts/sync_upstream.py --sha)"
+
 # Build with auto-detected backends
 python scripts/build_llama_cpp.py
 
@@ -327,9 +353,6 @@ python scripts/build_llama_cpp.py --no-cuda --no-vulkan
 
 # Detect available backends without building
 python scripts/build_llama_cpp.py --detect-only
-
-# Generate bindings
-python scripts/gen_bindings.py
 
 # Build wheel
 pip install build

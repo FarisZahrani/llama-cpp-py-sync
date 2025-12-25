@@ -98,3 +98,6 @@ Makefile
 *.gguf
 *.bin
 *.ggml
+
+# GitHub instructions (keep workflows tracked)
+.github/instructions/
