@@ -93,9 +93,10 @@ class Llama:
         if self._verbose:
             print(f"Loading model from {model_path}...")
 
-        load_model = getattr(self._lib, "llama_model_load_from_file", None) or getattr(
-            self._lib, "llama_load_model_from_file"
-        )
+        if hasattr(self._lib, "llama_model_load_from_file"):
+            load_model = self._lib.llama_model_load_from_file
+        else:
+            load_model = self._lib.llama_load_model_from_file
         self._model = load_model(
             model_path.encode("utf-8"),
             model_params,
@@ -122,13 +123,17 @@ class Llama:
         if seed != -1:
             pass
 
-        init_ctx = getattr(self._lib, "llama_init_from_model", None) or getattr(
-            self._lib, "llama_new_context_with_model"
-        )
+        if hasattr(self._lib, "llama_init_from_model"):
+            init_ctx = self._lib.llama_init_from_model
+        else:
+            init_ctx = self._lib.llama_new_context_with_model
         self._ctx = init_ctx(self._model, ctx_params)
 
         if self._ctx == self._ffi.NULL:
-            free_model = getattr(self._lib, "llama_model_free", None) or getattr(self._lib, "llama_free_model")
+            if hasattr(self._lib, "llama_model_free"):
+                free_model = self._lib.llama_model_free
+            else:
+                free_model = self._lib.llama_free_model
             free_model(self._model)
             raise RuntimeError("Failed to create model context")
 
@@ -187,7 +192,10 @@ class Llama:
             self._lib.llama_free(self._ctx)
             self._ctx = None
         if hasattr(self, "_model") and self._model is not None:
-            free_model = getattr(self._lib, "llama_model_free", None) or getattr(self._lib, "llama_free_model")
+            if hasattr(self._lib, "llama_model_free"):
+                free_model = self._lib.llama_model_free
+            else:
+                free_model = self._lib.llama_free_model
             free_model(self._model)
             self._model = None
 

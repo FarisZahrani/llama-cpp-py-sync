@@ -172,6 +172,10 @@ def get_cmake_args(
 
     if enable_cuda and backends["cuda"][0]:
         args.append("-DGGML_CUDA=ON")
+        if os.environ.get("GITHUB_ACTIONS") == "true" and not any(
+            a.startswith("-DGGML_NATIVE=") for a in args
+        ):
+            args.append("-DGGML_NATIVE=OFF")
         if not any(a.startswith("-DCMAKE_CUDA_ARCHITECTURES=") for a in args):
             cuda_archs = os.environ.get("CMAKE_CUDA_ARCHITECTURES")
             if not cuda_archs:
