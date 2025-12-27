@@ -172,6 +172,11 @@ def get_cmake_args(
 
     if enable_cuda and backends["cuda"][0]:
         args.append("-DGGML_CUDA=ON")
+        if not any(a.startswith("-DCMAKE_CUDA_ARCHITECTURES=") for a in args):
+            cuda_archs = os.environ.get("CMAKE_CUDA_ARCHITECTURES")
+            if not cuda_archs:
+                cuda_archs = "75;80;86"
+            args.append(f"-DCMAKE_CUDA_ARCHITECTURES={cuda_archs}")
         print(f"  CUDA: enabled ({backends['cuda'][1]})")
     else:
         args.append("-DGGML_CUDA=OFF")
@@ -264,7 +269,14 @@ def find_built_library(build_dir: Path) -> Optional[Path]:
     system = platform.system().lower()
 
     if system == "windows":
-        patterns = ["**/llama.dll", "**/Release/llama.dll", "**/bin/llama.dll"]
+        patterns = [
+            "**/libllama.dll",
+            "**/Release/libllama.dll",
+            "**/bin/libllama.dll",
+            "**/llama.dll",
+            "**/Release/llama.dll",
+            "**/bin/llama.dll",
+        ]
     elif system == "darwin":
         patterns = ["**/libllama.dylib", "**/lib/libllama.dylib"]
     else:
@@ -295,7 +307,7 @@ def _copy_windows_dependency_dlls(lib_path: Path, package_dir: Path) -> None:
 
     if not copied_any:
         print(
-            "Note: no ggml*.dll dependencies were found next to the built llama.dll. "
+            "Note: no ggml*.dll dependencies were found next to the built llama DLL. "
             "If you still see Windows error 0x7e at runtime, the missing dependency is likely a system/runtime DLL."
         )
 
