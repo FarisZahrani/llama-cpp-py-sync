@@ -387,6 +387,22 @@ class Llama:
         """Sample the next token from the model's output."""
         return self._lib.llama_sampler_sample(self._sampler, self._ctx, -1)
 
+    def _clear_context_state(self) -> None:
+        """Clear KV-cache / memory state so a new prompt can start at position 0."""
+        clear_fn = getattr(self._lib, "llama_kv_cache_clear", None)
+        if clear_fn is not None:
+            clear_fn(self._ctx)
+            return
+
+        # Newer llama.cpp exposes KV-cache as a "memory module".
+        get_mem = getattr(self._lib, "llama_get_memory", None)
+        mem_clear = getattr(self._lib, "llama_memory_clear", None)
+        if get_mem is not None and mem_clear is not None:
+            mem = get_mem(self._ctx)
+            if mem != self._ffi.NULL:
+                mem_clear(mem, True)
+                return
+
     def generate(
         self,
         prompt: str,
@@ -416,10 +432,7 @@ class Llama:
         Returns:
             Generated text (or iterator if stream=True).
         """
-        try:
-            self._lib.llama_kv_cache_clear(self._ctx)
-        except AttributeError:
-            pass
+        self._clear_context_state()
         self._lib.llama_sampler_reset(self._sampler)
 
         if hasattr(self, "_sampler") and self._sampler is not None:
@@ -508,10 +521,7 @@ class Llama:
         if not self._embedding:
             raise RuntimeError("Model was not loaded with embedding=True")
 
-        try:
-            self._lib.llama_kv_cache_clear(self._ctx)
-        except AttributeError:
-            pass
+        self._clear_context_state()
 
         tokens = self.tokenize(text, add_special=True)
 
