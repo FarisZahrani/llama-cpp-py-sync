@@ -68,6 +68,12 @@ def preprocess_header(content: str) -> str:
     content = re.sub(r'LLAMA_DEPRECATED\s*', '', content)
     content = re.sub(r'GGML_DEPRECATED\s*', '', content)
 
+    # ggml types referenced in llama.h but defined in other ggml headers. For CFFI ABI
+    # bindings we don't need their concrete definitions; treat them as opaque/primitive.
+    content = re.sub(r'\benum\s+ggml_numa_strategy\b', 'int', content)
+    content = re.sub(r'\benum\s+ggml_opt_optimizer_type\b', 'int', content)
+    content = re.sub(r'\bggml_opt_get_optimizer_params\b', 'void *', content)
+
     content = re.sub(r'\bextern\s+"C"\s*\{', '', content)
     content = re.sub(r'\}\s*//\s*extern\s+"C"', '', content)
 
@@ -97,6 +103,10 @@ def extract_enums(content: str) -> List[str]:
             if line and not line.startswith('//'):
                 line = re.sub(r'//.*$', '', line).strip()
                 if line:
+                    # CFFI only supports simple numeric constants in enums. Upstream headers
+                    # sometimes assign enum values from other macros (e.g. GGML_*). For the
+                    # Python bindings, we only need the enum names, so strip initializers.
+                    line = re.sub(r'\s*=\s*[^,}]+', '', line).strip()
                     members.append(f"    {line}")
 
         enum_def += '\n'.join(members)
@@ -108,27 +118,126 @@ def extract_enums(content: str) -> List[str]:
 
 def extract_structs(content: str) -> List[str]:
     """Extract struct definitions from header content."""
-    structs = []
+    structs: List[str] = []
 
-    typedef_struct_pattern = r'typedef\s+struct\s+(\w+)?\s*\{([^}]+)\}\s*(\w+)\s*;'
+    i = 0
+    needle = "typedef struct"
+    while True:
+        start = content.find(needle, i)
+        if start < 0:
+            break
 
-    for match in re.finditer(typedef_struct_pattern, content):
-        struct_name = match.group(3)
-        struct_body = match.group(2)
+        brace_open = content.find("{", start)
+        if brace_open < 0:
+            break
 
+        depth = 0
+        j = brace_open
+        while j < len(content):
+            ch = content[j]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+
+        if j >= len(content):
+            break
+
+        brace_close = j
+        semi = content.find(";", brace_close)
+        if semi < 0:
+            break
+
+        after = content[brace_close + 1 : semi]
+        m_name = re.search(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*$", after.strip())
+        if not m_name:
+            i = semi + 1
+            continue
+        struct_name = m_name.group(1)
+
+        struct_body = content[brace_open + 1 : brace_close]
         struct_def = f"typedef struct {struct_name} {{\n"
-
-        for line in struct_body.split('\n'):
+        for line in struct_body.split("\n"):
             line = line.strip()
-            if line and not line.startswith('//'):
-                line = re.sub(r'//.*$', '', line).strip()
+            if line and not line.startswith("//"):
+                line = re.sub(r"//.*$", "", line).strip()
                 if line:
                     struct_def += f"    {line}\n"
-
         struct_def += f"}} {struct_name};"
         structs.append(struct_def)
 
+        i = semi + 1
+
     return structs
+
+
+def extract_named_struct_decls(content: str) -> List[str]:
+    """Extract `struct name { ... };` declarations from header content."""
+    structs: List[str] = []
+
+    for m in re.finditer(r"\bstruct\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{", content):
+        struct_name = m.group(1)
+        brace_open = content.find("{", m.start())
+        if brace_open < 0:
+            continue
+
+        depth = 0
+        j = brace_open
+        while j < len(content):
+            ch = content[j]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            j += 1
+
+        if j >= len(content):
+            continue
+
+        brace_close = j
+        tail = content[brace_close : brace_close + 4]
+        if ";" not in tail:
+            # require closing '};' right after the block (allow whitespace/newlines)
+            post = content[brace_close : brace_close + 50]
+            if not re.match(r"\}\s*;", post):
+                continue
+
+        struct_body = content[brace_open + 1 : brace_close]
+        struct_def = f"struct {struct_name} {{\n"
+        for line in struct_body.split("\n"):
+            line = line.strip()
+            if line and not line.startswith("//"):
+                line = re.sub(r"//.*$", "", line).strip()
+                if line:
+                    struct_def += f"    {line}\n"
+        struct_def += "};"
+        structs.append(struct_def)
+
+    return structs
+
+
+def extract_typedefs(content: str) -> List[str]:
+    """Extract non-struct typedef statements from header content."""
+    typedefs: List[str] = []
+
+    typedef_pattern = r"^\s*typedef\s+(?!struct\b)[^;]+;\s*$"
+    for match in re.finditer(typedef_pattern, content, re.MULTILINE):
+        typedefs.append(match.group(0).strip())
+
+    return typedefs
+
+
+def _typedef_name(typedef_stmt: str) -> Optional[str]:
+    """Best-effort extraction of the declared typedef name."""
+    m = re.match(r"^typedef\s+.+?\b([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$", typedef_stmt.strip())
+    if not m:
+        return None
+    return m.group(1)
 
 
 def extract_functions(content: str) -> List[str]:
@@ -154,6 +263,22 @@ def generate_cdef(headers: dict) -> str:
     """
     cdef_parts = []
 
+    prelude_typedef_names = {
+        "llama_pos",
+        "llama_token",
+        "llama_seq_id",
+        "llama_memory_t",
+        "ggml_threadpool_t",
+        "ggml_backend_dev_t",
+        "ggml_backend_buffer_type_t",
+        "ggml_backend_sched_eval_callback",
+        "ggml_abort_callback",
+        "ggml_log_callback",
+        "ggml_opt_dataset_t",
+        "ggml_opt_result_t",
+        "ggml_opt_epoch_callback",
+    }
+
     cdef_parts.append("""
 // Basic types
 typedef int32_t llama_pos;
@@ -162,15 +287,68 @@ typedef int32_t llama_seq_id;
 
 // Opaque structs
 typedef struct llama_model llama_model;
+typedef struct llama_vocab llama_vocab;
 typedef struct llama_context llama_context;
 typedef struct llama_sampler llama_sampler;
+
+// Opaque handles
+struct llama_memory_i;
+typedef struct llama_memory_i * llama_memory_t;
+
+// Opaque ggml types referenced by the llama public API
+typedef void * ggml_threadpool_t;
+typedef void * ggml_backend_dev_t;
+typedef void * ggml_backend_buffer_type_t;
+typedef void * ggml_backend_sched_eval_callback;
+typedef void * ggml_abort_callback;
+typedef void * ggml_log_callback;
+typedef void * ggml_opt_dataset_t;
+typedef void * ggml_opt_result_t;
+typedef void * ggml_opt_epoch_callback;
 """)
 
     if "llama.h" in headers:
         with open(headers["llama.h"], encoding="utf-8", errors="ignore") as f:
             content = f.read()
 
-        preprocess_header(content)
+        content = preprocess_header(content)
+
+        typedefs = extract_typedefs(content)
+        if typedefs:
+            seen_typedef_names: set[str] = set()
+            filtered_typedefs: list[str] = []
+            for td in typedefs:
+                name = _typedef_name(td)
+                if name is None:
+                    filtered_typedefs.append(td)
+                    continue
+
+                if name in prelude_typedef_names:
+                    continue
+
+                if name in seen_typedef_names:
+                    continue
+                seen_typedef_names.add(name)
+                filtered_typedefs.append(td)
+
+            if filtered_typedefs:
+                cdef_parts.append("\n".join(filtered_typedefs))
+
+        enums = extract_enums(content)
+        if enums:
+            cdef_parts.append("\n\n".join(enums))
+
+        structs = extract_structs(content)
+        if structs:
+            cdef_parts.append("\n\n".join(structs))
+
+        named_structs = extract_named_struct_decls(content)
+        if named_structs:
+            cdef_parts.append("\n\n".join(named_structs))
+
+        functions = extract_functions(content)
+        if functions:
+            cdef_parts.append("\n".join(functions))
 
     return "\n".join(cdef_parts)
 
@@ -183,6 +361,8 @@ def generate_bindings_file(
 ):
     """Generate the _cffi_bindings.py file."""
     headers = find_header_files(vendor_path)
+
+    cdef_text = generate_cdef(headers) if headers else ""
 
     if not headers:
         print("Warning: No header files found in vendor directory")
@@ -207,443 +387,7 @@ from cffi import FFI
 ffi = FFI()
 
 _LLAMA_H_CDEF = """
-// Basic types
-typedef int32_t llama_pos;
-typedef int32_t llama_token;
-typedef int32_t llama_seq_id;
-
-// Opaque structs
-typedef struct llama_model llama_model;
-typedef struct llama_vocab llama_vocab;
-typedef struct llama_context llama_context;
-typedef struct llama_sampler llama_sampler;
-
-// Enum: llama_vocab_type
-enum llama_vocab_type {{
-    LLAMA_VOCAB_TYPE_NONE = 0,
-    LLAMA_VOCAB_TYPE_SPM  = 1,
-    LLAMA_VOCAB_TYPE_BPE  = 2,
-    LLAMA_VOCAB_TYPE_WPM  = 3,
-    LLAMA_VOCAB_TYPE_UGM  = 4,
-    LLAMA_VOCAB_TYPE_RWKV = 5,
-}};
-
-// Enum: llama_rope_type
-enum llama_rope_type {{
-    LLAMA_ROPE_TYPE_NONE = -1,
-    LLAMA_ROPE_TYPE_NORM =  0,
-    LLAMA_ROPE_TYPE_NEOX =  2,
-}};
-
-// Enum: llama_token_type
-enum llama_token_type {{
-    LLAMA_TOKEN_TYPE_UNDEFINED    = 0,
-    LLAMA_TOKEN_TYPE_NORMAL       = 1,
-    LLAMA_TOKEN_TYPE_UNKNOWN      = 2,
-    LLAMA_TOKEN_TYPE_CONTROL      = 3,
-    LLAMA_TOKEN_TYPE_USER_DEFINED = 4,
-    LLAMA_TOKEN_TYPE_UNUSED       = 5,
-    LLAMA_TOKEN_TYPE_BYTE         = 6,
-}};
-
-// Enum: llama_ftype
-enum llama_ftype {{
-    LLAMA_FTYPE_ALL_F32              = 0,
-    LLAMA_FTYPE_MOSTLY_F16           = 1,
-    LLAMA_FTYPE_MOSTLY_Q4_0          = 2,
-    LLAMA_FTYPE_MOSTLY_Q4_1          = 3,
-    LLAMA_FTYPE_MOSTLY_Q8_0          = 7,
-    LLAMA_FTYPE_MOSTLY_Q5_0          = 8,
-    LLAMA_FTYPE_MOSTLY_Q5_1          = 9,
-    LLAMA_FTYPE_MOSTLY_Q2_K          = 10,
-    LLAMA_FTYPE_MOSTLY_Q3_K_S        = 11,
-    LLAMA_FTYPE_MOSTLY_Q3_K_M        = 12,
-    LLAMA_FTYPE_MOSTLY_Q3_K_L        = 13,
-    LLAMA_FTYPE_MOSTLY_Q4_K_S        = 14,
-    LLAMA_FTYPE_MOSTLY_Q4_K_M        = 15,
-    LLAMA_FTYPE_MOSTLY_Q5_K_S        = 16,
-    LLAMA_FTYPE_MOSTLY_Q5_K_M        = 17,
-    LLAMA_FTYPE_MOSTLY_Q6_K          = 18,
-    LLAMA_FTYPE_MOSTLY_IQ2_XXS       = 19,
-    LLAMA_FTYPE_MOSTLY_IQ2_XS        = 20,
-    LLAMA_FTYPE_MOSTLY_Q2_K_S        = 21,
-    LLAMA_FTYPE_MOSTLY_IQ3_XS        = 22,
-    LLAMA_FTYPE_MOSTLY_IQ3_XXS       = 23,
-    LLAMA_FTYPE_MOSTLY_IQ1_S         = 24,
-    LLAMA_FTYPE_MOSTLY_IQ4_NL        = 25,
-    LLAMA_FTYPE_MOSTLY_IQ3_S         = 26,
-    LLAMA_FTYPE_MOSTLY_IQ3_M         = 27,
-    LLAMA_FTYPE_MOSTLY_IQ2_S         = 28,
-    LLAMA_FTYPE_MOSTLY_IQ2_M         = 29,
-    LLAMA_FTYPE_MOSTLY_IQ4_XS        = 30,
-    LLAMA_FTYPE_MOSTLY_IQ1_M         = 31,
-    LLAMA_FTYPE_GUESSED              = 1024,
-}};
-
-// Enum: llama_rope_scaling_type
-enum llama_rope_scaling_type {{
-    LLAMA_ROPE_SCALING_TYPE_UNSPECIFIED = -1,
-    LLAMA_ROPE_SCALING_TYPE_NONE        = 0,
-    LLAMA_ROPE_SCALING_TYPE_LINEAR      = 1,
-    LLAMA_ROPE_SCALING_TYPE_YARN        = 2,
-    LLAMA_ROPE_SCALING_TYPE_LONGROPE    = 3,
-    LLAMA_ROPE_SCALING_TYPE_MAX_VALUE   = 3,
-}};
-
-// Enum: llama_pooling_type
-enum llama_pooling_type {{
-    LLAMA_POOLING_TYPE_UNSPECIFIED = -1,
-    LLAMA_POOLING_TYPE_NONE = 0,
-    LLAMA_POOLING_TYPE_MEAN = 1,
-    LLAMA_POOLING_TYPE_CLS  = 2,
-    LLAMA_POOLING_TYPE_LAST = 3,
-    LLAMA_POOLING_TYPE_RANK = 4,
-}};
-
-// Enum: llama_attention_type
-enum llama_attention_type {{
-    LLAMA_ATTENTION_TYPE_UNSPECIFIED = -1,
-    LLAMA_ATTENTION_TYPE_CAUSAL      = 0,
-    LLAMA_ATTENTION_TYPE_NON_CAUSAL  = 1,
-}};
-
-// Enum: llama_flash_attn_type
-enum llama_flash_attn_type {{
-    LLAMA_FLASH_ATTN_TYPE_AUTO     = -1,
-    LLAMA_FLASH_ATTN_TYPE_DISABLED = 0,
-    LLAMA_FLASH_ATTN_TYPE_ENABLED  = 1,
-}};
-
-// Enum: llama_split_mode
-enum llama_split_mode {{
-    LLAMA_SPLIT_MODE_NONE  = 0,
-    LLAMA_SPLIT_MODE_LAYER = 1,
-    LLAMA_SPLIT_MODE_ROW   = 2,
-}};
-
-// Token data structure
-typedef struct llama_token_data {{
-    llama_token id;
-    float logit;
-    float p;
-}} llama_token_data;
-
-typedef struct llama_token_data_array {{
-    llama_token_data * data;
-    size_t size;
-    int64_t selected;
-    bool sorted;
-}} llama_token_data_array;
-
-typedef bool (*llama_progress_callback)(float progress, void * user_data);
-
-// Opaque / external types used in parameter structs
-typedef void * ggml_backend_dev_t;
-typedef void * ggml_backend_sched_eval_callback;
-typedef void * ggml_abort_callback;
-
-// Minimal ggml_type enum (used for sizing + field access)
-enum ggml_type {{
-    GGML_TYPE_F32 = 0,
-}};
-
-// Forward declarations (only used as pointers in params)
-struct llama_model_kv_override;
-struct llama_model_tensor_buft_override;
-
-// Batch structure
-typedef struct llama_batch {{
-    int32_t n_tokens;
-    llama_token  * token;
-    float        * embd;
-    llama_pos    * pos;
-    int32_t      * n_seq_id;
-    llama_seq_id ** seq_id;
-    int8_t       * logits;
-}} llama_batch;
-
-// Model parameters
-typedef struct llama_model_params {{
-    ggml_backend_dev_t * devices;
-    const struct llama_model_tensor_buft_override * tensor_buft_overrides;
-    int32_t n_gpu_layers;
-    enum llama_split_mode split_mode;
-    int32_t main_gpu;
-    const float * tensor_split;
-    llama_progress_callback progress_callback;
-    void * progress_callback_user_data;
-    const struct llama_model_kv_override * kv_overrides;
-    bool vocab_only;
-    bool use_mmap;
-    bool use_mlock;
-    bool check_tensors;
-    bool use_extra_bufts;
-    bool no_host;
-}} llama_model_params;
-
-// Context parameters
-typedef struct llama_context_params {{
-    uint32_t n_ctx;
-    uint32_t n_batch;
-    uint32_t n_ubatch;
-    uint32_t n_seq_max;
-    int32_t n_threads;
-    int32_t n_threads_batch;
-    enum llama_rope_scaling_type rope_scaling_type;
-    enum llama_pooling_type pooling_type;
-    enum llama_attention_type attention_type;
-    enum llama_flash_attn_type flash_attn_type;
-    float rope_freq_base;
-    float rope_freq_scale;
-    float yarn_ext_factor;
-    float yarn_attn_factor;
-    float yarn_beta_fast;
-    float yarn_beta_slow;
-    uint32_t yarn_orig_ctx;
-    float defrag_thold;
-    ggml_backend_sched_eval_callback cb_eval;
-    void * cb_eval_user_data;
-    enum ggml_type type_k;
-    enum ggml_type type_v;
-    ggml_abort_callback abort_callback;
-    void * abort_callback_data;
-    bool embeddings;
-    bool offload_kqv;
-    bool no_perf;
-    bool op_offload;
-    bool swa_full;
-    bool kv_unified;
-}} llama_context_params;
-
-// Sampler chain parameters
-typedef struct llama_sampler_chain_params {{
-    bool no_perf;
-}} llama_sampler_chain_params;
-
-// Model quantization parameters
-typedef struct llama_model_quantize_params {{
-    int32_t nthread;
-    int32_t ftype;
-    enum ggml_type output_tensor_type;
-    enum ggml_type token_embedding_type;
-    bool allow_requantize;
-    bool quantize_output_tensor;
-    bool only_copy;
-    bool pure;
-    bool keep_split;
-    void * imatrix;
-    void * kv_overrides;
-    void * tensor_types;
-    void * prune_layers;
-}} llama_model_quantize_params;
-
-// Lora adapter
-typedef struct llama_lora_adapter llama_lora_adapter;
-
-// Chat message
-typedef struct llama_chat_message {{
-    const char * role;
-    const char * content;
-}} llama_chat_message;
-
-// ============================================================================
-// Core API Functions
-// ============================================================================
-
-// Backend initialization
-void llama_backend_init(void);
-void llama_backend_free(void);
-
-// NUMA initialization
-void llama_numa_init(int32_t numa);
-
-// Model loading
-struct llama_model * llama_load_model_from_file(const char * path_model, struct llama_model_params params);
-struct llama_model * llama_model_load_from_file(const char * path_model, struct llama_model_params params);
-void llama_free_model(struct llama_model * model);
-void llama_model_free(struct llama_model * model);
-
-// Context creation
-struct llama_context * llama_new_context_with_model(struct llama_model * model, struct llama_context_params params);
-struct llama_context * llama_init_from_model(struct llama_model * model, struct llama_context_params params);
-void llama_free(struct llama_context * ctx);
-
-// Timing
-int64_t llama_time_us(void);
-
-// Default parameters
-struct llama_model_params llama_model_default_params(void);
-struct llama_context_params llama_context_default_params(void);
-struct llama_sampler_chain_params llama_sampler_chain_default_params(void);
-struct llama_model_quantize_params llama_model_quantize_default_params(void);
-
-// Model info
-int32_t llama_n_ctx(const struct llama_context * ctx);
-int32_t llama_n_batch(const struct llama_context * ctx);
-int32_t llama_n_ubatch(const struct llama_context * ctx);
-int32_t llama_n_seq_max(const struct llama_context * ctx);
-int32_t llama_n_ctx_train(const struct llama_model * model);
-int32_t llama_n_embd(const struct llama_model * model);
-int32_t llama_n_layer(const struct llama_model * model);
-int32_t llama_n_head(const struct llama_model * model);
-
-// Rope
-float llama_rope_freq_scale_train(const struct llama_model * model);
-
-// Vocab
-const struct llama_vocab * llama_model_get_vocab(const struct llama_model * model);
-int32_t llama_n_vocab(const struct llama_vocab * vocab);
-int32_t llama_vocab_n_tokens(const struct llama_vocab * vocab);
-enum llama_vocab_type llama_vocab_type(const struct llama_vocab * vocab);
-enum llama_rope_type llama_model_rope_type(const struct llama_model * model);
-
-// Model metadata
-const char * llama_model_desc(const struct llama_model * model, char * buf, size_t buf_size);
-uint64_t llama_model_size(const struct llama_model * model);
-uint64_t llama_model_n_params(const struct llama_model * model);
-
-// LoRA
-struct llama_lora_adapter * llama_lora_adapter_init(struct llama_model * model, const char * path_lora);
-int32_t llama_lora_adapter_set(struct llama_context * ctx, struct llama_lora_adapter * adapter, float scale);
-int32_t llama_lora_adapter_remove(struct llama_context * ctx, struct llama_lora_adapter * adapter);
-void llama_lora_adapter_clear(struct llama_context * ctx);
-void llama_lora_adapter_free(struct llama_lora_adapter * adapter);
-
-// KV cache
-void llama_kv_cache_clear(struct llama_context * ctx);
-bool llama_kv_cache_seq_rm(struct llama_context * ctx, llama_seq_id seq_id, llama_pos p0, llama_pos p1);
-void llama_kv_cache_seq_cp(struct llama_context * ctx, llama_seq_id seq_id_src, llama_seq_id seq_id_dst, llama_pos p0, llama_pos p1);
-void llama_kv_cache_seq_keep(struct llama_context * ctx, llama_seq_id seq_id);
-void llama_kv_cache_seq_add(struct llama_context * ctx, llama_seq_id seq_id, llama_pos p0, llama_pos p1, llama_pos delta);
-void llama_kv_cache_seq_div(struct llama_context * ctx, llama_seq_id seq_id, llama_pos p0, llama_pos p1, int d);
-llama_pos llama_kv_cache_seq_pos_max(struct llama_context * ctx, llama_seq_id seq_id);
-void llama_kv_cache_defrag(struct llama_context * ctx);
-void llama_kv_cache_update(struct llama_context * ctx);
-
-// Batch operations
-struct llama_batch llama_batch_init(int32_t n_tokens, int32_t embd, int32_t n_seq_max);
-void llama_batch_free(struct llama_batch batch);
-
-// Decode/encode
-int32_t llama_encode(struct llama_context * ctx, struct llama_batch batch);
-int32_t llama_decode(struct llama_context * ctx, struct llama_batch batch);
-void llama_set_n_threads(struct llama_context * ctx, int32_t n_threads, int32_t n_threads_batch);
-int32_t llama_n_threads(struct llama_context * ctx);
-int32_t llama_n_threads_batch(struct llama_context * ctx);
-
-// Embeddings
-float * llama_get_embeddings(struct llama_context * ctx);
-float * llama_get_embeddings_ith(struct llama_context * ctx, int32_t i);
-float * llama_get_embeddings_seq(struct llama_context * ctx, llama_seq_id seq_id);
-
-// Logits
-float * llama_get_logits(struct llama_context * ctx);
-float * llama_get_logits_ith(struct llama_context * ctx, int32_t i);
-
-// Tokenization
-int32_t llama_tokenize(
-    const struct llama_vocab * vocab,
-    const char * text,
-    int32_t text_len,
-    llama_token * tokens,
-    int32_t n_tokens_max,
-    bool add_special,
-    bool parse_special
-);
-
-int32_t llama_token_to_piece(
-    const struct llama_vocab * vocab,
-    llama_token token,
-    char * buf,
-    int32_t length,
-    int32_t lstrip,
-    bool special
-);
-
-int32_t llama_detokenize(
-    const struct llama_vocab * vocab,
-    const llama_token * tokens,
-    int32_t n_tokens,
-    char * text,
-    int32_t text_len_max,
-    bool remove_special,
-    bool unparse_special
-);
-
-// Special tokens
-llama_token llama_vocab_bos(const struct llama_vocab * vocab);
-llama_token llama_vocab_eos(const struct llama_vocab * vocab);
-llama_token llama_vocab_eot(const struct llama_vocab * vocab);
-llama_token llama_vocab_sep(const struct llama_vocab * vocab);
-llama_token llama_vocab_nl(const struct llama_vocab * vocab);
-llama_token llama_vocab_pad(const struct llama_vocab * vocab);
-bool llama_vocab_get_add_bos(const struct llama_vocab * vocab);
-bool llama_vocab_get_add_eos(const struct llama_vocab * vocab);
-
-// Deprecated aliases kept for compatibility with some builds
-llama_token llama_token_bos(const struct llama_vocab * vocab);
-llama_token llama_token_eos(const struct llama_vocab * vocab);
-llama_token llama_token_eot(const struct llama_vocab * vocab);
-llama_token llama_token_sep(const struct llama_vocab * vocab);
-llama_token llama_token_nl (const struct llama_vocab * vocab);
-llama_token llama_token_pad(const struct llama_vocab * vocab);
-bool llama_add_bos_token(const struct llama_vocab * vocab);
-bool llama_add_eos_token(const struct llama_vocab * vocab);
-
-// Samplers
-struct llama_sampler * llama_sampler_chain_init(struct llama_sampler_chain_params params);
-void llama_sampler_chain_add(struct llama_sampler * chain, struct llama_sampler * smpl);
-struct llama_sampler * llama_sampler_chain_get(const struct llama_sampler * chain, int32_t i);
-int32_t llama_sampler_chain_n(const struct llama_sampler * chain);
-struct llama_sampler * llama_sampler_chain_remove(struct llama_sampler * chain, int32_t i);
-void llama_sampler_free(struct llama_sampler * smpl);
-
-// Built-in samplers
-struct llama_sampler * llama_sampler_init_greedy(void);
-struct llama_sampler * llama_sampler_init_dist(uint32_t seed);
-struct llama_sampler * llama_sampler_init_top_k(int32_t k);
-struct llama_sampler * llama_sampler_init_top_p(float p, size_t min_keep);
-struct llama_sampler * llama_sampler_init_min_p(float p, size_t min_keep);
-struct llama_sampler * llama_sampler_init_typical(float p, size_t min_keep);
-struct llama_sampler * llama_sampler_init_temp(float t);
-struct llama_sampler * llama_sampler_init_temp_ext(float t, float delta, float exponent);
-struct llama_sampler * llama_sampler_init_penalties(
-    int32_t n_vocab,
-    llama_token special_eos_id,
-    llama_token linefeed_id,
-    int32_t penalty_last_n,
-    float penalty_repeat,
-    float penalty_freq,
-    float penalty_present,
-    bool penalize_nl,
-    bool ignore_eos
-);
-
-// Sampling
-void llama_sampler_reset(struct llama_sampler * smpl);
-void llama_sampler_accept(struct llama_sampler * smpl, llama_token token);
-void llama_sampler_apply(struct llama_sampler * smpl, struct llama_token_data_array * cur_p);
-llama_token llama_sampler_sample(struct llama_sampler * smpl, struct llama_context * ctx, int32_t idx);
-
-// Chat templates
-int32_t llama_chat_apply_template(
-    const struct llama_model * model,
-    const char * tmpl,
-    const struct llama_chat_message * chat,
-    size_t n_msg,
-    bool add_ass,
-    char * buf,
-    int32_t length
-);
-
-// System info
-const char * llama_print_system_info(void);
-
-// Backend info (for checking available backends)
-int32_t llama_max_devices(void);
-bool llama_supports_mmap(void);
-bool llama_supports_mlock(void);
-bool llama_supports_gpu_offload(void);
+{cdef_text}
 """
 
 ffi.cdef(_LLAMA_H_CDEF)
@@ -748,7 +492,8 @@ def get_ffi():
 
     output_content = template.format(
         timestamp=timestamp,
-        commit_sha=commit_sha
+        commit_sha=commit_sha,
+        cdef_text=cdef_text,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -22,26 +22,145 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent.resolve()
 
 
-def _require_build_tools() -> None:
-    if shutil.which("ninja") is None:
-        raise RuntimeError(
-            "Ninja was not found in PATH. Install Ninja and ensure `ninja` is available. "
-            "(This project uses Ninja for builds.)"
-        )
+def _is_windows() -> bool:
+    return platform.system().lower() == "windows"
 
+
+def _run_and_capture_env(cmd: list[str], cwd: Path | None = None) -> dict[str, str]:
+    result = subprocess.run(cmd, cwd=str(cwd) if cwd else None, capture_output=True, text=True)
+    if result.returncode != 0:
+        stderr = (result.stderr or "").strip()
+        stdout = (result.stdout or "").strip()
+        msg = stderr or stdout or f"Command failed: {' '.join(cmd)}"
+        raise RuntimeError(msg)
+
+    env: dict[str, str] = {}
+    for line in (result.stdout or "").splitlines():
+        if "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        env[k] = v
+    return env
+
+
+def _vswhere_path() -> Optional[Path]:
+    candidates = [
+        Path(os.environ.get("ProgramFiles(x86)", ""))
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe",
+        Path(os.environ.get("ProgramFiles", ""))
+        / "Microsoft Visual Studio"
+        / "Installer"
+        / "vswhere.exe",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return None
+
+
+def _prepend_path(dir_path: Path) -> None:
+    if not dir_path.exists():
+        return
+    p = str(dir_path)
+    cur = os.environ.get("PATH", "")
+    if cur.lower().startswith(p.lower() + os.pathsep):
+        return
+    os.environ["PATH"] = p + os.pathsep + cur
+
+
+def _try_add_vs_cmake_ninja(install_path: str) -> None:
+    # Visual Studio bundles CMake and Ninja under the IDE directory.
+    # This keeps setup minimal for Windows users.
+    root = Path(install_path)
+    cmake_bin = root / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / "CMake" / "CMake" / "bin"
+    ninja_bin = root / "Common7" / "IDE" / "CommonExtensions" / "Microsoft" / "CMake" / "Ninja"
+    _prepend_path(cmake_bin)
+    _prepend_path(ninja_bin)
+
+
+def _try_load_msvc_env() -> bool:
+    if not _is_windows():
+        return True
+
+    if shutil.which("cl") is not None:
+        return True
+
+    vswhere = _vswhere_path()
+    if vswhere is None:
+        return False
+
+    try:
+        install_path = subprocess.check_output(
+            [
+                str(vswhere),
+                "-latest",
+                "-products",
+                "*",
+                "-requires",
+                "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                "-property",
+                "installationPath",
+            ],
+            text=True,
+        ).strip()
+    except Exception:
+        return False
+
+    if not install_path:
+        return False
+
+    _try_add_vs_cmake_ninja(install_path)
+
+    vcvars64 = Path(install_path) / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+    if not vcvars64.exists():
+        return False
+
+    try:
+        env = _run_and_capture_env(["cmd", "/c", f'"{vcvars64}" && set'])
+    except Exception:
+        return False
+
+    for k, v in env.items():
+        os.environ[k] = v
+
+    return shutil.which("cl") is not None
+
+
+def _cmake_generator() -> Optional[str]:
+    if not _is_windows():
+        return "Ninja"
+
+    if shutil.which("ninja") is not None:
+        return "Ninja"
+    if shutil.which("nmake") is not None:
+        return "NMake Makefiles"
+    if shutil.which("cl") is not None:
+        return "NMake Makefiles"
+    return None
+
+
+def _require_build_tools() -> None:
     if shutil.which("cmake") is None:
         raise RuntimeError(
             "CMake was not found in PATH. Install CMake and ensure `cmake` is available, "
             "or install a prebuilt wheel that bundles the llama shared library."
         )
 
-    if platform.system().lower() == "windows":
-        # CMake on Windows typically needs a compiler toolchain available.
-        # We can't reliably validate every setup, but we can catch the common missing-tool case.
-        if shutil.which("cl") is None and shutil.which("ninja") is None and shutil.which("mingw32-make") is None:
+    if _is_windows():
+        _try_load_msvc_env()
+        gen = _cmake_generator()
+        if gen is None:
             raise RuntimeError(
-                "No C/C++ build toolchain was detected (missing `cl`, `ninja`, and `mingw32-make`). "
-                "Install 'Visual Studio Build Tools' (MSVC) or Ninja and try again."
+                "No usable C/C++ build toolchain was detected. "
+                "Install 'Visual Studio Build Tools' (MSVC) or add a supported generator to PATH (Ninja/NMake)."
+            )
+    else:
+        if shutil.which("ninja") is None:
+            raise RuntimeError(
+                "Ninja was not found in PATH. Install Ninja and ensure `ninja` is available. "
+                "(This project uses Ninja for builds.)"
             )
 
 
@@ -170,12 +289,17 @@ def get_cmake_args(
         "-DLLAMA_CURL=OFF",
     ]
 
+    # When producing distributable wheels in CI, never compile with -march=native
+    # (GGML_NATIVE=ON). GitHub runners may support instructions (e.g. AVX512) that
+    # are not available on end-user CPUs, leading to runtime "Illegal instruction"
+    # crashes.
+    if os.environ.get("GITHUB_ACTIONS") == "true" and not any(
+        a.startswith("-DGGML_NATIVE=") for a in args
+    ):
+        args.append("-DGGML_NATIVE=OFF")
+
     if enable_cuda and backends["cuda"][0]:
         args.append("-DGGML_CUDA=ON")
-        if os.environ.get("GITHUB_ACTIONS") == "true" and not any(
-            a.startswith("-DGGML_NATIVE=") for a in args
-        ):
-            args.append("-DGGML_NATIVE=OFF")
         if not any(a.startswith("-DCMAKE_CUDA_ARCHITECTURES=") for a in args):
             cuda_archs = os.environ.get("CMAKE_CUDA_ARCHITECTURES")
             if not cuda_archs:
@@ -229,9 +353,10 @@ def run_cmake_configure(
     _require_build_tools()
     build_dir.mkdir(parents=True, exist_ok=True)
 
-    # Force Ninja so we have a single, consistent build toolchain.
-    # NOTE: CMake is still used to generate the Ninja build files.
-    cmd = ["cmake", "-G", "Ninja", str(source_dir)] + cmake_args
+    gen = _cmake_generator()
+    if gen is None:
+        raise RuntimeError("Unable to select a CMake generator for this platform.")
+    cmd = ["cmake", "-G", gen, str(source_dir)] + cmake_args
 
     print(f"Running: {' '.join(cmd)}")
 

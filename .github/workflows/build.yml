@@ -72,7 +72,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
       
       - name: Install build tools
         run: |
@@ -86,6 +89,10 @@ jobs:
       - name: Build llama.cpp
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
       
       - name: Generate version
         run: |
@@ -136,7 +143,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Regenerate bindings from vendored llama.cpp
         run: |
@@ -145,6 +155,10 @@ jobs:
       - name: Build llama.cpp with CUDA
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
 
       - name: Bundle llama.cpp dependency DLLs
         shell: pwsh
@@ -200,7 +214,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
       
       - name: Install build tools
         run: |
@@ -214,6 +231,10 @@ jobs:
       - name: Build llama.cpp with Vulkan
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-metal
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
       
       - name: Generate version
         run: |
@@ -253,7 +274,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Install build tools
         run: |
@@ -266,6 +290,10 @@ jobs:
       - name: Build llama.cpp with Metal
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
       
       - name: Generate version
         run: |
@@ -305,7 +333,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Install build tools
         run: |
@@ -318,6 +349,10 @@ jobs:
       - name: Build llama.cpp
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
 
       - name: Bundle llama.cpp dependency DLLs
         shell: pwsh
@@ -376,7 +411,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Install Ninja
         shell: pwsh
@@ -392,6 +430,10 @@ jobs:
       - name: Build llama.cpp
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-vulkan --no-metal
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
 
       - name: Bundle Windows runtime DLLs
         shell: pwsh
@@ -545,7 +587,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Install Ninja
         shell: pwsh
@@ -561,6 +606,10 @@ jobs:
       - name: Build llama.cpp with CUDA
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
 
       - name: Bundle Windows runtime DLLs
         shell: pwsh
@@ -695,7 +744,10 @@ jobs:
       
       - name: Clone llama.cpp
         run: |
-          git clone --depth 1 ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
+          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
+          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
 
       - name: Install Ninja
         shell: pwsh
@@ -711,6 +763,10 @@ jobs:
       - name: Build llama.cpp with Vulkan
         run: |
           python scripts/build_llama_cpp.py --no-cuda --no-rocm --no-metal
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
 
       - name: Bundle Windows runtime DLLs
         shell: pwsh
