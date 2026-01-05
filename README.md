@@ -348,8 +348,14 @@ python scripts/gen_bindings.py --commit-sha "$(python scripts/sync_upstream.py -
 # Build with auto-detected backends
 python scripts/build_llama_cpp.py
 
-# Build with specific backends disabled
-python scripts/build_llama_cpp.py --no-cuda --no-vulkan
+# Build a specific backend
+python scripts/build_llama_cpp.py --backend cuda
+python scripts/build_llama_cpp.py --backend vulkan
+python scripts/build_llama_cpp.py --backend cpu
+
+# On Windows, the build script bundles required runtime DLLs (MSVC/OpenMP and backend runtimes)
+# next to the built library by default. You can disable this behavior with:
+python scripts/build_llama_cpp.py --no-bundle-runtime-dlls
 
 # Detect available backends without building
 python scripts/build_llama_cpp.py --detect-only

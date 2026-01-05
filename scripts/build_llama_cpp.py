@@ -17,9 +17,198 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 
+def _copy_runtime_dll(src: Path, dst_dir: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst = dst_dir / src.name
+    try:
+        shutil.copy2(src, dst)
+    except Exception:
+        return False
+    return True
+
+
+def _copy_msvc_openmp_runtimes(package_dir: Path) -> int:
+    candidates: List[Path] = []
+
+    vs_roots: List[Path] = []
+    for env_key in ["VCToolsInstallDir", "VCINSTALLDIR", "VSINSTALLDIR", "VSCMD_ARG_VCVARS"]:
+        val = os.environ.get(env_key)
+        if val:
+            vs_roots.append(Path(val))
+
+    program_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\\Program Files (x86)")
+    try:
+        vs_roots.extend(
+            list(
+                Path(program_files_x86).glob(
+                    "Microsoft Visual Studio/*/*/VC/Redist/MSVC/*/x64/*"
+                )
+            )
+        )
+    except Exception:
+        pass
+
+    vc_patterns = [
+        "Microsoft.VC*CRT/vcruntime140*.dll",
+        "Microsoft.VC*CRT/msvcp140*.dll",
+        "Microsoft.VC*CRT/concrt140*.dll",
+        "Microsoft.VC*OpenMP/vcomp140*.dll",
+    ]
+
+    for root in vs_roots:
+        try:
+            if root.is_dir():
+                for pattern in vc_patterns:
+                    for p in root.glob(pattern):
+                        if p.is_file():
+                            candidates.append(p)
+        except Exception:
+            pass
+
+    system32 = Path(r"C:\\Windows\\System32")
+    for p in [
+        system32 / "vcruntime140.dll",
+        system32 / "vcruntime140_1.dll",
+        system32 / "msvcp140.dll",
+        system32 / "msvcp140_1.dll",
+        system32 / "msvcp140_atomic_wait.dll",
+        system32 / "concrt140.dll",
+        system32 / "vcomp140.dll",
+    ]:
+        if p.exists():
+            candidates.append(p)
+
+    copied = 0
+    seen = set()
+    for src in candidates:
+        key = src.name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if _copy_runtime_dll(src, package_dir):
+            copied += 1
+    return copied
+
+
+def _copy_vulkan_runtime_dlls(package_dir: Path) -> int:
+    copied = 0
+    vulkan_sdk = os.environ.get("VULKAN_SDK")
+    vulkan_bin_dir = Path(vulkan_sdk) / "Bin" if vulkan_sdk else None
+
+    if vulkan_bin_dir is not None and vulkan_bin_dir.exists():
+        src = vulkan_bin_dir / "vulkan-1.dll"
+        if _copy_runtime_dll(src, package_dir):
+            copied += 1
+
+    if not (package_dir / "vulkan-1.dll").exists():
+        for sys_path in [
+            Path(r"C:\\Windows\\System32\\vulkan-1.dll"),
+            Path(r"C:\\Windows\\SysWOW64\\vulkan-1.dll"),
+        ]:
+            if _copy_runtime_dll(sys_path, package_dir):
+                copied += 1
+                break
+
+    return copied
+
+
+def _copy_cuda_runtime_dlls(package_dir: Path) -> int:
+    cuda_home = os.environ.get("CUDA_HOME") or os.environ.get("CUDA_PATH")
+    if not cuda_home:
+        return 0
+    cuda_bin = Path(cuda_home) / "bin"
+    if not cuda_bin.exists():
+        return 0
+
+    required = [
+        "cudart64_*.dll",
+        "cublas64_*.dll",
+        "cublasLt64_*.dll",
+        "cusparse64_*.dll",
+        "cusolver64_*.dll",
+        "curand64_*.dll",
+    ]
+
+    copied = 0
+    seen = set()
+    for pattern in required:
+        for src in cuda_bin.glob(pattern):
+            key = src.name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            if _copy_runtime_dll(src, package_dir):
+                copied += 1
+    return copied
+
+
+def _bundle_windows_runtime_dlls(
+    package_dir: Path,
+    backends: Dict[str, Tuple[bool, Optional[str]]],
+    enable_cuda: bool,
+    enable_vulkan: bool,
+) -> None:
+    msvc_count = _copy_msvc_openmp_runtimes(package_dir)
+    cuda_count = 0
+    vulkan_count = 0
+
+    if enable_cuda and backends.get("cuda", (False, None))[0]:
+        cuda_count = _copy_cuda_runtime_dlls(package_dir)
+
+    if enable_vulkan and backends.get("vulkan", (False, None))[0]:
+        vulkan_count = _copy_vulkan_runtime_dlls(package_dir)
+
+    if msvc_count == 0:
+        print(
+            "Warning: No MSVC/OpenMP runtime DLLs were bundled. If you see Windows error 0x7e on a clean machine, install VC++ 2015-2022 x64 redistributable."
+        )
+    if enable_cuda and backends.get("cuda", (False, None))[0] and cuda_count == 0:
+        print(
+            "Warning: CUDA backend was enabled but no CUDA runtime DLLs were bundled. If you see Windows error 0x7e on a clean machine, ensure CUDA runtime DLLs are present or set CUDA_PATH when building."
+        )
+
+    if enable_vulkan and backends.get("vulkan", (False, None))[0] and vulkan_count == 0:
+        print(
+            "Warning: Vulkan backend was enabled but vulkan-1.dll could not be bundled. Ensure Vulkan is installed (GPU drivers) or set VULKAN_SDK when building."
+        )
+
+
 def get_project_root() -> Path:
     """Get the project root directory."""
     return Path(__file__).parent.parent.resolve()
+
+
+def _read_text_if_exists(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+def _ensure_vendor_llama_cpp(project_root: Path, vendor_path: Path) -> None:
+    if vendor_path.exists():
+        return
+
+    git = shutil.which("git")
+    if git is None:
+        raise RuntimeError(
+            f"Vendor directory not found: {vendor_path}. "
+            "Git is required to auto-fetch llama.cpp (install git or provide --vendor-path)."
+        )
+
+    vendor_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Otherwise clone from upstream.
+    repo_url = os.environ.get("LLAMA_CPP_VENDOR_REPO", "https://github.com/ggml-org/llama.cpp")
+    cmd = [git, "clone", "--depth", "1", repo_url, str(vendor_path)]
+    print(f"Vendor llama.cpp missing; cloning: {' '.join(cmd)}")
+    res = subprocess.run(cmd, cwd=str(project_root))
+    if res.returncode != 0 or not vendor_path.exists():
+        raise RuntimeError(
+            f"Failed to clone llama.cpp into {vendor_path}. "
+            "You can clone it manually or set LLAMA_CPP_VENDOR_REPO / use --vendor-path."
+        )
 
 
 def _is_windows() -> bool:
@@ -466,6 +655,9 @@ def build_llama_cpp(
     enable_blas: bool = True,
     parallel: int = 0,
     clean: bool = False,
+    fetch_vendor: bool = True,
+    bundle_runtime_dlls: bool = True,
+    project_root: Optional[Path] = None,
 ) -> Optional[Path]:
     """
     Build llama.cpp and return path to the built library.
@@ -481,8 +673,15 @@ def build_llama_cpp(
         Path to the built library, or None if build failed.
     """
     if not vendor_path.exists():
-        print(f"Error: Vendor directory not found: {vendor_path}", file=sys.stderr)
-        return None
+        if fetch_vendor:
+            try:
+                _ensure_vendor_llama_cpp(project_root or get_project_root(), vendor_path)
+            except Exception as e:
+                print(f"Error: {e}", file=sys.stderr)
+                return None
+        else:
+            print(f"Error: Vendor directory not found: {vendor_path}", file=sys.stderr)
+            return None
 
     build_dir = vendor_path / "build"
 
@@ -523,6 +722,14 @@ def build_llama_cpp(
 
     dest_path = copy_library_to_package(lib_path, output_dir)
 
+    if _is_windows() and bundle_runtime_dlls:
+        _bundle_windows_runtime_dlls(
+            output_dir,
+            backends,
+            enable_cuda=enable_cuda,
+            enable_vulkan=enable_vulkan,
+        )
+
     return dest_path
 
 
@@ -537,6 +744,11 @@ def main():
         help="Path to vendor/llama.cpp directory"
     )
     parser.add_argument(
+        "--no-fetch-vendor",
+        action="store_true",
+        help="Do not auto-fetch vendor/llama.cpp when missing"
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
@@ -547,6 +759,17 @@ def main():
         type=Path,
         default=None,
         help="Project root directory"
+    )
+
+    parser.add_argument(
+        "--backend",
+        choices=["auto", "cpu", "cuda", "vulkan", "rocm", "metal"],
+        default="auto",
+        help=(
+            "Select a single backend to build (default: auto). "
+            "This is a convenience flag that sets the --no-* toggles for you; "
+            "explicit --no-* flags still override."
+        ),
     )
     parser.add_argument(
         "--no-cuda",
@@ -590,6 +813,12 @@ def main():
         help="Only detect backends, don't build"
     )
 
+    parser.add_argument(
+        "--no-bundle-runtime-dlls",
+        action="store_true",
+        help="Do not bundle Windows runtime DLLs (CUDA/MSVC/OpenMP) next to the built library",
+    )
+
     args = parser.parse_args()
 
     project_root = args.project_root or get_project_root()
@@ -607,16 +836,46 @@ def main():
         print(f"  BLAS:   {'✓' if backends['blas'][0] else '✗'} {backends['blas'][1] or ''}")
         return
 
+    # Backend selection convenience. Defaults to existing behavior (auto).
+    enable_cuda = not args.no_cuda
+    enable_rocm = not args.no_rocm
+    enable_vulkan = not args.no_vulkan
+    enable_metal = not args.no_metal
+    enable_blas = not args.no_blas
+
+    if args.backend != "auto":
+        enable_cuda = args.backend == "cuda"
+        enable_rocm = args.backend == "rocm"
+        enable_vulkan = args.backend == "vulkan"
+        enable_metal = args.backend == "metal"
+        # For a predictable single-backend build, keep BLAS off by default.
+        enable_blas = False
+
+    # Allow explicit no-* flags to override backend convenience.
+    if args.no_cuda:
+        enable_cuda = False
+    if args.no_rocm:
+        enable_rocm = False
+    if args.no_vulkan:
+        enable_vulkan = False
+    if args.no_metal:
+        enable_metal = False
+    if args.no_blas:
+        enable_blas = False
+
     lib_path = build_llama_cpp(
         vendor_path=vendor_path,
         output_dir=output_dir,
-        enable_cuda=not args.no_cuda,
-        enable_rocm=not args.no_rocm,
-        enable_vulkan=not args.no_vulkan,
-        enable_metal=not args.no_metal,
-        enable_blas=not args.no_blas,
+        enable_cuda=enable_cuda,
+        enable_rocm=enable_rocm,
+        enable_vulkan=enable_vulkan,
+        enable_metal=enable_metal,
+        enable_blas=enable_blas,
         parallel=args.parallel,
         clean=args.clean,
+        fetch_vendor=not args.no_fetch_vendor,
+        bundle_runtime_dlls=(not args.no_bundle_runtime_dlls) if _is_windows() else False,
+        project_root=project_root,
     )
 
     if lib_path:
