@@ -71,11 +71,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
       
       - name: Install build tools
         run: |
@@ -142,11 +144,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Regenerate bindings from vendored llama.cpp
         run: |
@@ -213,11 +217,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
       
       - name: Install build tools
         run: |
@@ -273,11 +279,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Install build tools
         run: |
@@ -332,11 +340,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Install build tools
         run: |
@@ -410,11 +420,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Install Ninja
         shell: pwsh
@@ -586,11 +598,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Install Ninja
         shell: pwsh
@@ -743,11 +757,13 @@ jobs:
           pip install build wheel cffi numpy
       
       - name: Clone llama.cpp
+        shell: pwsh
         run: |
-          LLAMA_SHA="${{ needs.check-upstream.outputs.upstream_sha }}"
+          $ErrorActionPreference = 'Stop'
+          $env:LLAMA_SHA = '${{ needs.check-upstream.outputs.upstream_sha }}'
           git clone ${{ env.LLAMA_CPP_REPO }} vendor/llama.cpp
-          git -C vendor/llama.cpp fetch --depth 1 origin "${LLAMA_SHA}"
-          git -C vendor/llama.cpp checkout --detach "${LLAMA_SHA}"
+          git -C vendor/llama.cpp fetch --depth 1 origin $env:LLAMA_SHA
+          git -C vendor/llama.cpp checkout --detach $env:LLAMA_SHA
 
       - name: Install Ninja
         shell: pwsh

@@ -496,6 +496,8 @@ def get_ffi():
         cdef_text=cdef_text,
     )
 
+    output_content = "\n".join(line.rstrip() for line in output_content.splitlines()) + "\n"
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(output_content)

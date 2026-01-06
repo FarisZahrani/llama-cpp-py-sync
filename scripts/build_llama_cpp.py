@@ -232,6 +232,44 @@ def _run_and_capture_env(cmd: list[str], cwd: Path | None = None) -> dict[str, s
     return env
 
 
+def _try_import_windows_toolchain_env(project_root: Path) -> bool:
+    if not _is_windows():
+        return True
+
+    setup_script = project_root / "scripts" / "setup_windows_toolchain.ps1"
+    if not setup_script.exists():
+        return False
+
+    # Run the toolchain script in a child PowerShell, then print the resulting environment
+    # so we can import it into this Python process.
+    ps_cmd = (
+        "& { "
+        f". '{str(setup_script)}' -Quiet; "
+        "Get-ChildItem Env:* | ForEach-Object { \"$($_.Name)=$($_.Value)\" } "
+        "}"
+    )
+
+    try:
+        env = _run_and_capture_env(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps_cmd,
+            ],
+            cwd=project_root,
+        )
+    except Exception:
+        return False
+
+    for k, v in env.items():
+        os.environ[k] = v
+
+    return shutil.which("cl") is not None
+
+
 def _vswhere_path() -> Optional[Path]:
     candidates = [
         Path(os.environ.get("ProgramFiles(x86)", ""))
@@ -269,11 +307,15 @@ def _try_add_vs_cmake_ninja(install_path: str) -> None:
     _prepend_path(ninja_bin)
 
 
-def _try_load_msvc_env() -> bool:
+def _try_load_msvc_env(project_root: Optional[Path] = None) -> bool:
     if not _is_windows():
         return True
 
     if shutil.which("cl") is not None:
+        return True
+
+    root = project_root or get_project_root()
+    if _try_import_windows_toolchain_env(root):
         return True
 
     vswhere = _vswhere_path()
@@ -338,7 +380,11 @@ def _require_build_tools() -> None:
         )
 
     if _is_windows():
-        _try_load_msvc_env()
+        if not _try_load_msvc_env(get_project_root()):
+            raise RuntimeError(
+                "No usable C/C++ toolchain was detected. Install 'Visual Studio Build Tools' (MSVC) with the C++ workload, "
+                "or run scripts/setup_windows_toolchain.ps1, then retry."
+            )
         gen = _cmake_generator()
         if gen is None:
             raise RuntimeError(

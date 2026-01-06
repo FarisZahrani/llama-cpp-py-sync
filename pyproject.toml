@@ -94,6 +94,9 @@ target-version = "py38"
 select = ["E", "F", "W", "I", "UP", "B", "C4"]
 ignore = ["E501"]
 
+ [tool.ruff.lint.per-file-ignores]
+ "src/llama_cpp_py_sync/_cffi_bindings.py" = ["W291"]
+
 [tool.mypy]
 python_version = "3.8"
 warn_return_any = true
