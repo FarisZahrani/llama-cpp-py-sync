@@ -3,6 +3,8 @@
 import argparse
 import ctypes
 import platform
+import shutil
+import subprocess
 from pathlib import Path
 
 
@@ -45,6 +47,38 @@ def _load_library(lib_path: Path) -> ctypes.CDLL:
     return ctypes.CDLL(str(lib_path))
 
 
+def _windows_dumpbin_exports(lib_path: Path) -> set[str] | None:
+    if platform.system().lower() != "windows":
+        return None
+
+    dumpbin = shutil.which("dumpbin")
+    if not dumpbin:
+        return None
+
+    try:
+        proc = subprocess.run(
+            [dumpbin, "/exports", str(lib_path)],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    except Exception:
+        return None
+
+    exports: set[str] = set()
+    for line in proc.stdout.splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        parts = s.split()
+        # Typical row: "1    0 00001000 llama_backend_init"
+        if len(parts) >= 4 and parts[0].isdigit() and parts[1].isdigit():
+            exports.add(parts[-1])
+
+    return exports
+
+
 def _require_symbol(lib: ctypes.CDLL, name: str) -> None:
     try:
         getattr(lib, name)
@@ -66,8 +100,6 @@ def main() -> int:
     root = _project_root()
     lib_path = args.lib or _default_library_path(root)
 
-    lib = _load_library(lib_path)
-
     required = [
         "llama_backend_init",
         "llama_model_default_params",
@@ -75,6 +107,14 @@ def main() -> int:
         "llama_print_system_info",
     ]
 
+    exports = _windows_dumpbin_exports(lib_path)
+    if exports is not None:
+        missing = [s for s in required if s not in exports]
+        if missing:
+            raise RuntimeError(f"Missing required export(s): {', '.join(missing)}")
+        return 0
+
+    lib = _load_library(lib_path)
     for sym in required:
         _require_symbol(lib, sym)
 
