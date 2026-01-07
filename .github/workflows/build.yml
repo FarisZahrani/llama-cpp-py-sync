@@ -621,10 +621,6 @@ jobs:
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
 
-      - name: Validate llama.cpp exports
-        run: |
-          python scripts/validate_llama_exports.py
-
       - name: Bundle Windows runtime DLLs
         shell: pwsh
         run: |
@@ -705,6 +701,10 @@ jobs:
           if ($missing.Count -gt 0) {
             Write-Warning "Some runtime DLLs were not found and could not be bundled: $($missing -join ', ')"
           }
+
+      - name: Validate llama.cpp exports
+        run: |
+          python scripts/validate_llama_exports.py
       
       - name: Generate version
         run: |
