@@ -402,7 +402,7 @@ jobs:
   build-windows-x64:
     needs: check-upstream
     if: needs.check-upstream.outputs.should_build == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       
@@ -521,8 +521,8 @@ jobs:
             $searchDirs += (Join-Path $env:VULKAN_SDK 'Bin')
             $searchDirs += (Join-Path $env:VULKAN_SDK 'Lib')
           }
-          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Bin'
-          $searchDirs += 'C:\\VulkanSDK\\1.3.296.0\\Lib'
+          $searchDirs += 'C:\\VulkanSDK\\1.4.335.0\\Bin'
+          $searchDirs += 'C:\\VulkanSDK\\1.4.335.0\\Lib'
 
           # Normalize + unique existing dirs
           $searchDirs = $searchDirs | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
@@ -574,7 +574,7 @@ jobs:
   build-windows-x64-cuda:
     needs: check-upstream
     if: needs.check-upstream.outputs.should_build == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       
@@ -736,7 +736,7 @@ jobs:
   build-windows-x64-vulkan:
     needs: check-upstream
     if: needs.check-upstream.outputs.should_build == 'true'
-    runs-on: windows-latest
+    runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
       
@@ -750,6 +750,8 @@ jobs:
 
       - name: Install Vulkan SDK
         uses: jakoch/install-vulkan-sdk-action@v1
+        with:
+          vulkan_version: '1.4.335.0'
 
       - name: Install dependencies
         run: |
