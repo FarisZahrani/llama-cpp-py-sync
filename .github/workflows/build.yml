@@ -24,6 +24,10 @@ jobs:
     outputs:
       should_build: ${{ steps.check.outputs.should_build }}
       upstream_sha: ${{ steps.check.outputs.upstream_sha }}
+      upstream_tag: ${{ steps.check.outputs.upstream_tag }}
+      upstream_tag_exists: ${{ steps.check.outputs.upstream_tag_exists }}
+      latest_upstream_tag: ${{ steps.check.outputs.latest_upstream_tag }}
+      latest_upstream_tag_sha: ${{ steps.check.outputs.latest_upstream_tag_sha }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +39,48 @@ jobs:
       - name: Check upstream for changes
         id: check
         run: |
-          UPSTREAM_SHA=$(git ls-remote ${{ env.LLAMA_CPP_REPO }} HEAD | cut -f1)
+          EVENT_NAME="${{ github.event_name }}"
+          REF_TYPE="${{ github.ref_type }}"
+          REF_NAME="${{ github.ref_name }}"
+
+          # If this workflow is running for a tag, prefer building against the upstream tag SHA *if it exists upstream*.
+          # Otherwise, build against upstream HEAD.
+          UPSTREAM_TAG=""
+          UPSTREAM_TAG_EXISTS="false"
+
+          if [ "${REF_TYPE}" = "tag" ] && [ -n "${REF_NAME}" ]; then
+            UPSTREAM_TAG="${REF_NAME}"
+            UPSTREAM_SHA=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} "refs/tags/${UPSTREAM_TAG}" | cut -f1)
+            if [ -n "${UPSTREAM_SHA}" ]; then
+              UPSTREAM_TAG_EXISTS="true"
+            else
+              # Local-only tag; don't publish a Release/PyPI for it.
+              UPSTREAM_SHA=$(git ls-remote ${{ env.LLAMA_CPP_REPO }} HEAD | cut -f1)
+            fi
+          else
+            UPSTREAM_SHA=$(git ls-remote ${{ env.LLAMA_CPP_REPO }} HEAD | cut -f1)
+          fi
+
+          echo "upstream_tag=${UPSTREAM_TAG}" >> $GITHUB_OUTPUT
+          echo "upstream_tag_exists=${UPSTREAM_TAG_EXISTS}" >> $GITHUB_OUTPUT
+
           echo "upstream_sha=${UPSTREAM_SHA}" >> $GITHUB_OUTPUT
+
+          # Discover latest upstream tag (for scheduled mirroring).
+          # Uses version-sort; works well for semver tags (v1.2.3) and most tag naming schemes.
+          LATEST_UPSTREAM_TAG=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} 'refs/tags/*' |
+            awk -F/ '{print $NF}' |
+            sort -V |
+            tail -n 1)
+
+          if [ -n "${LATEST_UPSTREAM_TAG}" ]; then
+            LATEST_UPSTREAM_TAG_SHA=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} "refs/tags/${LATEST_UPSTREAM_TAG}" | cut -f1)
+          else
+            LATEST_UPSTREAM_TAG_SHA=""
+          fi
+
+          echo "latest_upstream_tag=${LATEST_UPSTREAM_TAG}" >> $GITHUB_OUTPUT
+          echo "latest_upstream_tag_sha=${LATEST_UPSTREAM_TAG_SHA}" >> $GITHUB_OUTPUT
           
           if [ -f .llama_cpp_sync_state.json ]; then
             LAST_SHA=$(cat .llama_cpp_sync_state.json | jq -r '.last_sync_sha // ""')
@@ -52,6 +96,42 @@ jobs:
           else
             echo "should_build=false" >> $GITHUB_OUTPUT
           fi
+
+  mirror-upstream-tag:
+    needs: check-upstream
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Mirror latest upstream tag
+        env:
+          LATEST_UPSTREAM_TAG: ${{ needs.check-upstream.outputs.latest_upstream_tag }}
+          LATEST_UPSTREAM_TAG_SHA: ${{ needs.check-upstream.outputs.latest_upstream_tag_sha }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${LATEST_UPSTREAM_TAG}" ]; then
+            echo "No upstream tag found; skipping."
+            exit 0
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${LATEST_UPSTREAM_TAG}" >/dev/null; then
+            echo "Tag already exists in this repo: ${LATEST_UPSTREAM_TAG}"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Create a lightweight tag on our current HEAD. The wheel build will still pin vendor/llama.cpp
+          # to the upstream tag SHA via check-upstream logic.
+          git tag -a "${LATEST_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${LATEST_UPSTREAM_TAG} (${LATEST_UPSTREAM_TAG_SHA})"
+          git push origin "refs/tags/${LATEST_UPSTREAM_TAG}"
 
   build-linux-x86_64:
     needs: check-upstream
@@ -396,7 +476,7 @@ jobs:
       - name: Upload wheel
         uses: actions/upload-artifact@v4
         with:
-          name: wheel-macos-x86_64
+          name: wheel-macos-x86_64-cpu
           path: dist/*.whl
 
   build-windows-x64:
@@ -889,7 +969,7 @@ jobs:
           path: dist/*win_amd64.whl
 
   release:
-    needs: [build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64, build-windows-x64-cuda, build-windows-x64-vulkan]
+    needs: [check-upstream, build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64, build-windows-x64-cuda, build-windows-x64-vulkan]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     runs-on: ubuntu-latest
     permissions:
@@ -903,18 +983,25 @@ jobs:
           path: dist
           pattern: wheel-*
           merge-multiple: true
+
+      - name: Download CPU-only wheels (for PyPI)
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_pypi
+          pattern: wheel-*-cpu
+          merge-multiple: true
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && needs.check-upstream.outputs.upstream_tag_exists == 'true'
         with:
           files: dist/*.whl
           generate_release_notes: true
       
       - name: Publish to PyPI
-        if: startsWith(github.ref, 'refs/tags/') && env.PYPI_API_TOKEN != ''
+        if: startsWith(github.ref, 'refs/tags/') && needs.check-upstream.outputs.upstream_tag_exists == 'true' && env.PYPI_API_TOKEN != ''
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
           pip install twine
-          twine upload dist/*.whl -u __token__ -p $PYPI_API_TOKEN
+          twine upload dist_pypi/*.whl -u __token__ -p $PYPI_API_TOKEN

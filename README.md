@@ -15,7 +15,8 @@
 
 - Automatic upstream sync and binding regeneration
 - Prebuilt wheels built by CI
-- Backends supported by upstream `llama.cpp` (CPU, CUDA, ROCm, Vulkan, Metal, BLAS)
+- CPU-only wheels published to PyPI
+- Backend-specific wheels (CUDA / Vulkan / Metal) published to GitHub Releases
 - A small, explicit Python API (`Llama.generate`, `tokenize`, `get_embeddings`, etc.)
 
 ## Installation
@@ -28,9 +29,11 @@ This project supports **Python 3.8+**. During the current testing phase, CI buil
 pip install llama-cpp-py-sync
 ```
 
-### From GitHub Actions / Releases (Wheel)
+This installs the **CPU** wheel.
 
-Download the wheel artifact for your platform and install the `.whl` inside it:
+### From GitHub Releases (Wheel)
+
+Download the wheel for your platform/backend from GitHub Releases and install the `.whl`:
 
 ```bash
 pip install path/to/llama_cpp_py_sync-*.whl
@@ -181,12 +184,11 @@ llama.is_blas_available()
 
 ### Automatic Synchronization
 
-1. **Scheduled Checks**: GitHub Actions checks upstream llama.cpp every 6 hours
-2. **SHA Comparison**: Compares upstream HEAD with last synced commit
-3. **Auto-Sync**: If changes detected, pulls latest code automatically
-4. **Binding Regeneration**: `gen_bindings.py` regenerates CFFI declarations from the synced headers (and records the commit SHA when provided)
-5. **Wheel Building**: CI builds wheels for all platforms
-6. **Auto-Release**: New wheels published to GitHub Releases (and PyPI if configured)
+1. **Scheduled Checks**: GitHub Actions checks upstream llama.cpp on a schedule
+2. **Tag Mirroring**: When an upstream tag exists, the workflow can mirror it into this repository
+3. **Wheel Building**: CI builds wheels for all platforms/backends
+4. **Release Publishing**: GitHub Releases are created only for tags that exist upstream
+5. **PyPI Publishing**: CPU-only wheels are published to PyPI for upstream tags (if configured)
 
 ### CFFI ABI Mode
 
@@ -206,6 +208,7 @@ import llama_cpp_py_sync as llama
 
 print(f"Package version: {llama.__version__}")
 print(f"llama.cpp commit: {llama.__llama_cpp_commit__}")
+print(f"llama.cpp tag: {getattr(llama, '__llama_cpp_tag__', '')}")
 ```
 
 ## GPU Backend Selection
