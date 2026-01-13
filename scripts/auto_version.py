@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
+
 def get_project_root() -> Path:
     return Path(__file__).parent.parent.resolve()
 

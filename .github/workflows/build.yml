@@ -215,7 +215,11 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
+          for i in 1 2 3 4 5; do
+            sudo apt-get update && break
+            echo "apt-get update failed (attempt $i/5). Sleeping before retry..."
+            sleep 20
+          done
           sudo apt-get install -y cmake ninja-build build-essential
 
       - name: Install dependencies
