@@ -10,16 +10,14 @@ This script generates version strings based on:
 
 import argparse
 import os
-import subprocess
 import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple
 
-
 def get_project_root() -> Path:
     return Path(__file__).parent.parent.resolve()
-
 
 def run_git_command(args: list, cwd: Optional[Path] = None) -> Tuple[int, str, str]:
     try:
