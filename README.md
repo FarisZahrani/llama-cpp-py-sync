@@ -4,7 +4,7 @@
 
 [![Build Wheels](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml)
 [![Sync Upstream](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml)
-[![PyPI version](https://badge.fury.io/py/llama-cpp-py-sync.svg)](https://badge.fury.io/py/llama-cpp-py-sync)
+[![PyPI version](https://img.shields.io/pypi/v/llama-cpp-py-sync.svg)](https://pypi.org/project/llama-cpp-py-sync/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Overview
@@ -338,7 +338,7 @@ By default it uses `LLAMA_MODEL` if set, otherwise it falls back to the repo's b
 
 ```bash
 # Clone repository
-git clone https://github.com/llama-cpp-py-sync/llama-cpp-py-sync.git
+git clone https://github.com/FarisZahrani/llama-cpp-py-sync.git
 cd llama-cpp-py-sync
 
 # Sync upstream llama.cpp
