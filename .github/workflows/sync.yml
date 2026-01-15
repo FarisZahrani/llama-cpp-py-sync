@@ -46,22 +46,27 @@ jobs:
         run: |
           set -euo pipefail
 
-          LATEST_UPSTREAM_TAG=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} 'refs/tags/*' |
-            awk -F/ '{print $NF}' |
-            sort -V |
-            tail -n 1)
+          # Fetch upstream tags into a dedicated namespace so we can select the newest by date.
+          # This avoids string-sorting pitfalls (e.g. tags like "master-<sha>" sorting after "b7744").
+          git remote remove upstream >/dev/null 2>&1 || true
+          git remote add upstream ${{ env.LLAMA_CPP_REPO }}
+          git fetch --force upstream '+refs/tags/*:refs/tags/_upstream/*'
 
-          if [ -z "${LATEST_UPSTREAM_TAG}" ]; then
+          LATEST_UPSTREAM_TAG_REF=$(git for-each-ref --sort=-creatordate --format='%(refname)' refs/tags/_upstream | head -n 1)
+          if [ -z "${LATEST_UPSTREAM_TAG_REF}" ]; then
             echo "No upstream tag found; skipping."
             exit 0
           fi
+
+          # Strip prefix: refs/tags/_upstream/<tag> -> <tag>
+          LATEST_UPSTREAM_TAG=${LATEST_UPSTREAM_TAG_REF#refs/tags/_upstream/}
 
           if git rev-parse -q --verify "refs/tags/${LATEST_UPSTREAM_TAG}" >/dev/null; then
             echo "Tag already exists in this repo: ${LATEST_UPSTREAM_TAG}"
             exit 0
           fi
 
-          LATEST_UPSTREAM_TAG_SHA=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} "refs/tags/${LATEST_UPSTREAM_TAG}" | cut -f1)
+          LATEST_UPSTREAM_TAG_SHA=$(git rev-parse "${LATEST_UPSTREAM_TAG_REF}")
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
