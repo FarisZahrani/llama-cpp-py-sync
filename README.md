@@ -425,7 +425,18 @@ Contributions are welcome! Please:
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Run tests: `pytest`
+4. Run checks:
+
+```bash
+python scripts/run_tests.py
+```
+
+Optionally also verify wheel packaging locally:
+
+```bash
+python scripts/run_tests.py --build-wheel
+```
+
 5. Submit a pull request
 
 ## License
