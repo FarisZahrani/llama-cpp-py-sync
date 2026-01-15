@@ -25,6 +25,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      
+      - name: Fetch tags
+        run: |
+          git fetch --tags --force
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -35,6 +40,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y jq
+
+      - name: Mirror latest upstream tag
+        id: mirror_tag
+        run: |
+          set -euo pipefail
+
+          LATEST_UPSTREAM_TAG=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} 'refs/tags/*' |
+            awk -F/ '{print $NF}' |
+            sort -V |
+            tail -n 1)
+
+          if [ -z "${LATEST_UPSTREAM_TAG}" ]; then
+            echo "No upstream tag found; skipping."
+            exit 0
+          fi
+
+          if git rev-parse -q --verify "refs/tags/${LATEST_UPSTREAM_TAG}" >/dev/null; then
+            echo "Tag already exists in this repo: ${LATEST_UPSTREAM_TAG}"
+            exit 0
+          fi
+
+          LATEST_UPSTREAM_TAG_SHA=$(git ls-remote --tags --refs ${{ env.LLAMA_CPP_REPO }} "refs/tags/${LATEST_UPSTREAM_TAG}" | cut -f1)
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag -a "${LATEST_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${LATEST_UPSTREAM_TAG} (${LATEST_UPSTREAM_TAG_SHA})"
+          git push origin "refs/tags/${LATEST_UPSTREAM_TAG}"
       
       - name: Check for upstream changes
         id: check
@@ -84,18 +117,3 @@ jobs:
           UPSTREAM_SHORT=$(echo "${{ steps.check.outputs.upstream_sha }}" | cut -c1-8)
           git commit -m "sync: update to llama.cpp ${UPSTREAM_SHORT}" || echo "No changes to commit"
           git push
-      
-      - name: Trigger build workflow
-        if: steps.check.outputs.needs_sync == 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'build.yml',
-              ref: 'master',
-              inputs: {
-                force_rebuild: 'true'
-              }
-            })

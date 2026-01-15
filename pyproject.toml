@@ -9,10 +9,10 @@ description = "Auto-synchronized Python bindings for llama.cpp using CFFI ABI mo
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Faris Al-Zahrani"}
+    {name = "Faris Al-Zahrani", email = "contact@fariszahrani.com"}
 ]
 maintainers = [
-    {name = "Faris Al-Zahrani"}
+    {name = "Faris Al-Zahrani", email = "contact@fariszahrani.com"}
 ]
 keywords = [
     "llama",

@@ -1,11 +1,12 @@
 """Test that the package can be imported."""
 
-import pytest
+import math
 
 
 def test_version_import():
     """Test version can be imported without library."""
-    from llama_cpp_py_sync._version import __version__, __llama_cpp_commit__
+    from llama_cpp_py_sync._version import __llama_cpp_commit__, __version__
+
     assert isinstance(__version__, str)
     assert len(__version__) > 0
     assert isinstance(__llama_cpp_commit__, str)
@@ -31,20 +32,22 @@ def test_llama_class_definition():
 def test_backends_module_structure():
     """Test backends module structure without loading library."""
     from llama_cpp_py_sync.backends import BackendInfo
+
     assert BackendInfo is not None
-    
+
     info = BackendInfo()
-    assert info.cuda == False
-    assert info.metal == False
+    assert not info.cuda
+    assert not info.metal
 
 
 def test_embeddings_module_structure():
     """Test embeddings module structure."""
     from llama_cpp_py_sync.embeddings import (
-        normalize_embedding,
         cosine_similarity,
         euclidean_distance,
+        normalize_embedding,
     )
+
     assert callable(normalize_embedding)
     assert callable(cosine_similarity)
     assert callable(euclidean_distance)
@@ -53,11 +56,11 @@ def test_embeddings_module_structure():
 def test_cosine_similarity():
     """Test cosine similarity function."""
     from llama_cpp_py_sync.embeddings import cosine_similarity
-    
+
     a = [1.0, 0.0, 0.0]
     b = [1.0, 0.0, 0.0]
     assert abs(cosine_similarity(a, b) - 1.0) < 0.001
-    
+
     c = [0.0, 1.0, 0.0]
     assert abs(cosine_similarity(a, c) - 0.0) < 0.001
 
@@ -65,10 +68,9 @@ def test_cosine_similarity():
 def test_normalize_embedding():
     """Test embedding normalization."""
     from llama_cpp_py_sync.embeddings import normalize_embedding
-    import math
-    
+
     emb = [3.0, 4.0]
     normalized = normalize_embedding(emb)
-    
+
     length = math.sqrt(sum(x*x for x in normalized))
     assert abs(length - 1.0) < 0.001
