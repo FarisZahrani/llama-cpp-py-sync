@@ -5,7 +5,6 @@ import urllib.request
 from pathlib import Path
 from typing import List, Optional
 
-
 _DEFAULT_MODEL_URL = (
     "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/"
     "Llama-3.2-3B-Instruct-Q4_K_M.gguf"

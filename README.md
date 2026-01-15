@@ -31,6 +31,28 @@ pip install llama-cpp-py-sync
 
 This installs the **CPU** wheel.
 
+### Quick Chat (Recommended)
+
+After installing from PyPI, you can start an interactive chat session with:
+
+```bash
+python -m llama_cpp_py_sync chat
+```
+
+If you do not pass `--model` (and `LLAMA_MODEL` is not set), the CLI will automatically download a default GGUF model and cache it locally for future runs.
+
+One-shot prompt:
+
+```bash
+python -m llama_cpp_py_sync chat --prompt "Say 'ok'." --max-tokens 32
+```
+
+Use a specific local model:
+
+```bash
+python -m llama_cpp_py_sync chat --model path/to/model.gguf
+```
+
 ### From GitHub Releases (Wheel)
 
 Download the wheel for your platform/backend from GitHub Releases and install the `.whl`:
@@ -313,16 +335,21 @@ This repository includes an interactive smoke test that can run either as a one-
 
 ```bash
 # Interactive chat (Ctrl+C or blank line to exit)
-python scripts/smoke_test_chat.py
+python -m llama_cpp_py_sync chat
 
 # One-shot prompt
-python scripts/smoke_test_chat.py --prompt "Say 'ok'." --max-tokens 16
+python -m llama_cpp_py_sync chat --prompt "Say 'ok'." --max-tokens 16
 
 # Use a specific model
-python scripts/smoke_test_chat.py --model path/to/model.gguf
+python -m llama_cpp_py_sync chat --model path/to/model.gguf
 ```
 
-By default it uses `LLAMA_MODEL` if set, otherwise it falls back to the repo's bundled model (if present).
+By default it uses `LLAMA_MODEL` if set. Otherwise it downloads a default GGUF model and caches it locally.
+
+Model cache location:
+
+- **Windows**: `%LOCALAPPDATA%\llama-cpp-py-sync\models\`
+- **Linux/macOS**: `~/.cache/llama-cpp-py-sync/models/`
 
 ## Building from Source
 
