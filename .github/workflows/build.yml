@@ -1007,5 +1007,6 @@ jobs:
         env:
           PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
         run: |
-          pip install twine
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade packaging twine
           twine upload dist_pypi/*.whl -u __token__ -p $PYPI_API_TOKEN
