@@ -147,7 +147,7 @@ jobs:
           python -m pip install --upgrade wheel
           ORIGINAL_WHEELS=$(ls dist/*.whl)
           for w in $ORIGINAL_WHEELS; do
-            python -m wheel tags --platform-tag manylinux2014_x86_64 --build cpu "$w"
+            python -m wheel tags --platform-tag manylinux2014_x86_64 --build 1cpu "$w"
           done
           rm -f $ORIGINAL_WHEELS
       
@@ -239,7 +239,7 @@ jobs:
           python -m pip install --upgrade wheel
           ORIGINAL_WHEELS=$(ls dist/*.whl)
           for w in $ORIGINAL_WHEELS; do
-            python -m wheel tags --platform-tag manylinux2014_x86_64 --build cuda "$w"
+            python -m wheel tags --platform-tag manylinux2014_x86_64 --build 1cuda "$w"
           done
           rm -f $ORIGINAL_WHEELS
       
@@ -305,7 +305,7 @@ jobs:
           python -m pip install --upgrade wheel
           ORIGINAL_WHEELS=$(ls dist/*.whl)
           for w in $ORIGINAL_WHEELS; do
-            python -m wheel tags --platform-tag manylinux2014_x86_64 --build vulkan "$w"
+            python -m wheel tags --platform-tag manylinux2014_x86_64 --build 1vulkan "$w"
           done
           rm -f $ORIGINAL_WHEELS
       
@@ -370,7 +370,7 @@ jobs:
           python -m pip install --upgrade wheel
           ORIGINAL_WHEELS=$(ls dist/*.whl)
           for w in $ORIGINAL_WHEELS; do
-            python -m wheel tags --platform-tag macosx_14_0_arm64 --build metal "$w"
+            python -m wheel tags --platform-tag macosx_14_0_arm64 --build 1metal "$w"
           done
           rm -f $ORIGINAL_WHEELS
       
@@ -451,7 +451,7 @@ jobs:
           python -m pip install --upgrade wheel
           ORIGINAL_WHEELS=$(ls dist/*.whl)
           for w in $ORIGINAL_WHEELS; do
-            python -m wheel tags --platform-tag macosx_14_0_x86_64 --build cpu "$w"
+            python -m wheel tags --platform-tag macosx_14_0_x86_64 --build 1cpu "$w"
           done
           rm -f $ORIGINAL_WHEELS
       
@@ -621,7 +621,7 @@ jobs:
           $wheels = Get-ChildItem -Path dist -Filter *.whl
           if (-not $wheels) { throw "No wheels found in dist/" }
           foreach ($w in $wheels) {
-            python -m wheel tags --platform-tag win_amd64 --build cpu $w.FullName
+            python -m wheel tags --platform-tag win_amd64 --build 1cpu $w.FullName
           }
           foreach ($w in $wheels) { Remove-Item -Force $w.FullName }
       
@@ -781,7 +781,7 @@ jobs:
           $wheels = Get-ChildItem -Path dist -Filter *.whl
           if (-not $wheels) { throw "No wheels found in dist/" }
           foreach ($w in $wheels) {
-            python -m wheel tags --platform-tag win_amd64 --build cuda $w.FullName
+            python -m wheel tags --platform-tag win_amd64 --build 1cuda $w.FullName
           }
           foreach ($w in $wheels) { Remove-Item -Force $w.FullName }
       
@@ -934,7 +934,7 @@ jobs:
           $wheels = Get-ChildItem -Path dist -Filter *.whl
           if (-not $wheels) { throw "No wheels found in dist/" }
           foreach ($w in $wheels) {
-            python -m wheel tags --platform-tag win_amd64 --build vulkan $w.FullName
+            python -m wheel tags --platform-tag win_amd64 --build 1vulkan $w.FullName
           }
           foreach ($w in $wheels) { Remove-Item -Force $w.FullName }
       
@@ -946,7 +946,7 @@ jobs:
 
   release:
     needs: [check-upstream, build-linux-x86_64, build-linux-x86_64-cuda, build-linux-x86_64-vulkan, build-macos-arm64, build-macos-x86_64, build-windows-x64, build-windows-x64-cuda, build-windows-x64-vulkan]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
