@@ -71,6 +71,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+          # The runner can end up with stale local tags. We only treat the tag as existing
+          # if it exists on origin (checked above). Ensure local state can't block mirroring.
+          if git rev-parse -q --verify "refs/tags/${LATEST_UPSTREAM_TAG}" >/dev/null; then
+            git tag -d "${LATEST_UPSTREAM_TAG}"
+          fi
+
           git tag -a "${LATEST_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${LATEST_UPSTREAM_TAG} (${LATEST_UPSTREAM_TAG_SHA})"
           git push origin "refs/tags/${LATEST_UPSTREAM_TAG}"
       
