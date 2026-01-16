@@ -79,6 +79,21 @@ jobs:
 
           git tag -a "${LATEST_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${LATEST_UPSTREAM_TAG} (${LATEST_UPSTREAM_TAG_SHA})"
           git push origin "refs/tags/${LATEST_UPSTREAM_TAG}"
+          echo "mirrored_tag=${LATEST_UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger Build Wheels for mirrored tag
+        if: steps.mirror_tag.outputs.mirrored_tag != ''
+        env:
+          MIRRORED_TAG: ${{ steps.mirror_tag.outputs.mirrored_tag }}
+        run: |
+          set -euo pipefail
+
+          curl -sS -L \
+            -X POST \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "${{ github.api_url }}/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches" \
+            -d "{\"ref\":\"refs/tags/${MIRRORED_TAG}\"}"
       
       - name: Check for upstream changes
         id: check
