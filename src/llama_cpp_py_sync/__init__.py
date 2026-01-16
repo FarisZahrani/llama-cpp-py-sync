@@ -6,7 +6,7 @@ generated from upstream headers using CFFI ABI mode. The bindings stay
 synchronized with the latest llama.cpp releases without manual intervention.
 """
 
-from llama_cpp_py_sync._version import __llama_cpp_commit__, __version__
+from llama_cpp_py_sync._version import __llama_cpp_commit__, __llama_cpp_tag__, __version__
 from llama_cpp_py_sync.backends import (
     get_available_backends,
     get_backend_info,
@@ -22,6 +22,7 @@ from llama_cpp_py_sync.llama import Llama
 __all__ = [
     "__version__",
     "__llama_cpp_commit__",
+    "__llama_cpp_tag__",
     "Llama",
     "get_embeddings",
     "get_embeddings_batch",

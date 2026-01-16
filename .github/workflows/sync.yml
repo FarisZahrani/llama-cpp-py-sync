@@ -52,71 +52,27 @@ jobs:
           git remote add upstream ${{ env.LLAMA_CPP_REPO }}
           git fetch --force upstream '+refs/tags/*:refs/tags/_upstream/*'
 
-          MIRROR_UPSTREAM_TAG_REF=""
-          while IFS= read -r tag_ref; do
-            if [ -z "${tag_ref}" ]; then
-              continue
-            fi
-            tag_name=${tag_ref#refs/tags/_upstream/}
-            if ! git rev-parse -q --verify "refs/tags/${tag_name}" >/dev/null; then
-              MIRROR_UPSTREAM_TAG_REF="${tag_ref}"
-              break
-            fi
-          done < <(git for-each-ref --sort=-creatordate --format='%(refname)' refs/tags/_upstream)
-
-          if [ -z "${MIRROR_UPSTREAM_TAG_REF}" ]; then
-            echo "No new upstream tag to mirror; skipping."
+          LATEST_UPSTREAM_TAG_REF=$(git for-each-ref --sort=-creatordate --count=1 --format='%(refname)' refs/tags/_upstream)
+          if [ -z "${LATEST_UPSTREAM_TAG_REF}" ]; then
+            echo "No upstream tag found; skipping."
             exit 0
           fi
 
           # Strip prefix: refs/tags/_upstream/<tag> -> <tag>
-          MIRROR_UPSTREAM_TAG=${MIRROR_UPSTREAM_TAG_REF#refs/tags/_upstream/}
-          MIRROR_UPSTREAM_TAG_SHA=$(git rev-parse "${MIRROR_UPSTREAM_TAG_REF}")
+          LATEST_UPSTREAM_TAG=${LATEST_UPSTREAM_TAG_REF#refs/tags/_upstream/}
+
+          if git rev-parse -q --verify "refs/tags/${LATEST_UPSTREAM_TAG}" >/dev/null; then
+            echo "Tag already exists in this repo: ${LATEST_UPSTREAM_TAG}"
+            exit 0
+          fi
+
+          LATEST_UPSTREAM_TAG_SHA=$(git rev-parse "${LATEST_UPSTREAM_TAG_REF}")
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git tag -a "${MIRROR_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${MIRROR_UPSTREAM_TAG} (${MIRROR_UPSTREAM_TAG_SHA})"
-          git push origin "refs/tags/${MIRROR_UPSTREAM_TAG}"
-          echo "mirrored_tag=${MIRROR_UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
-          echo "mirrored_tag_sha=${MIRROR_UPSTREAM_TAG_SHA}" >> "$GITHUB_OUTPUT"
-
-      - name: Trigger Build Wheels for mirrored tag
-        if: steps.mirror_tag.outputs.mirrored_tag != ''
-        env:
-          MIRRORED_TAG: ${{ steps.mirror_tag.outputs.mirrored_tag }}
-          MIRRORED_TAG_SHA: ${{ steps.mirror_tag.outputs.mirrored_tag_sha }}
-        run: |
-          set -euo pipefail
-
-          # If the tag push already triggered Build Wheels (e.g. when using a PAT, or if GitHub behavior changes),
-          # avoid triggering a duplicate workflow_dispatch run.
-          sleep 10
-
-          RUNS_JSON=$(curl -sS -L \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "${{ github.api_url }}/repos/${{ github.repository }}/actions/workflows/build.yml/runs?per_page=50")
-
-          EXISTING_RUN_ID=$(echo "$RUNS_JSON" | jq -r --arg tag "$MIRRORED_TAG" --arg sha "$MIRRORED_TAG_SHA" '
-            (.workflow_runs // [])
-            | map(select((.head_branch == $tag) or (.head_sha == $sha)))
-            | map(.id)
-            | first
-            | . // empty
-          ')
-
-          if [ -n "$EXISTING_RUN_ID" ]; then
-            echo "Build Wheels already has a run for tag ${MIRRORED_TAG} (run id: ${EXISTING_RUN_ID}); skipping dispatch."
-            exit 0
-          fi
-
-          curl -sS -L \
-            -X POST \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "${{ github.api_url }}/repos/${{ github.repository }}/actions/workflows/build.yml/dispatches" \
-            -d "{\"ref\":\"refs/tags/${MIRRORED_TAG}\"}"
+          git tag -a "${LATEST_UPSTREAM_TAG}" -m "Mirror llama.cpp tag ${LATEST_UPSTREAM_TAG} (${LATEST_UPSTREAM_TAG_SHA})"
+          git push origin "refs/tags/${LATEST_UPSTREAM_TAG}"
       
       - name: Check for upstream changes
         id: check
