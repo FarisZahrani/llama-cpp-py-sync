@@ -52,7 +52,7 @@ jobs:
           git remote add upstream ${{ env.LLAMA_CPP_REPO }}
           git fetch --force upstream '+refs/tags/*:refs/tags/_upstream/*'
 
-          LATEST_UPSTREAM_TAG_REF=$(git for-each-ref --sort=-creatordate --format='%(refname)' refs/tags/_upstream | head -n 1)
+          LATEST_UPSTREAM_TAG_REF=$(git for-each-ref --sort=-creatordate --count=1 --format='%(refname)' refs/tags/_upstream)
           if [ -z "${LATEST_UPSTREAM_TAG_REF}" ]; then
             echo "No upstream tag found; skipping."
             exit 0
