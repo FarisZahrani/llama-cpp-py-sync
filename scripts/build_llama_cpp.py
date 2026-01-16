@@ -676,6 +676,43 @@ def _copy_windows_dependency_dlls(lib_path: Path, package_dir: Path) -> None:
         )
 
 
+def _run_install_name_tool(args: list[str]) -> None:
+    try:
+        subprocess.run(["install_name_tool", *args], check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        return
+
+
+def _copy_macos_dependency_dylibs(lib_path: Path, package_dir: Path) -> None:
+    lib_dir = lib_path.parent
+    patterns = ["libllama*.dylib", "libggml*.dylib"]
+
+    copied: list[Path] = []
+    for pattern in patterns:
+        for dep_path in lib_dir.glob(pattern):
+            dest_path = package_dir / dep_path.name
+            if dest_path.exists():
+                continue
+            shutil.copy2(dep_path, dest_path)
+            copied.append(dest_path)
+            print(f"Copied {dep_path} to {dest_path}")
+
+    for dylib_path in copied:
+        _run_install_name_tool(["-id", f"@loader_path/{dylib_path.name}", str(dylib_path)])
+        _run_install_name_tool(["-add_rpath", "@loader_path", str(dylib_path)])
+
+    for dylib_path in copied:
+        for dep in copied:
+            _run_install_name_tool(
+                [
+                    "-change",
+                    f"@rpath/{dep.name}",
+                    f"@loader_path/{dep.name}",
+                    str(dylib_path),
+                ]
+            )
+
+
 def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
     """Copy the built library to the package directory."""
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -687,6 +724,9 @@ def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
 
     if platform.system().lower() == "windows" and lib_path.suffix.lower() == ".dll":
         _copy_windows_dependency_dlls(lib_path, package_dir)
+
+    if platform.system().lower() == "darwin" and lib_path.suffix.lower() == ".dylib":
+        _copy_macos_dependency_dylibs(lib_path, package_dir)
 
     return dest_path
 
