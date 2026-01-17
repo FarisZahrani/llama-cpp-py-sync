@@ -16,6 +16,8 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+_HOMEBREW_INSTALL_URL = "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh"
+
 
 def _copy_runtime_dll(src: Path, dst_dir: Path) -> bool:
     if not src.exists() or not src.is_file():
@@ -372,7 +374,84 @@ def _cmake_generator() -> Optional[str]:
     return None
 
 
-def _require_build_tools() -> None:
+def _is_macos() -> bool:
+    return platform.system() == "Darwin"
+
+
+def _find_brew() -> Optional[str]:
+    brew = shutil.which("brew")
+    if brew:
+        return brew
+    for candidate in ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]:
+        if Path(candidate).exists():
+            _prepend_path(Path(candidate).parent)
+            return candidate
+    return None
+
+
+def _install_homebrew() -> bool:
+    if not _is_macos():
+        return False
+    if _find_brew() is not None:
+        return True
+    print("Homebrew not found. Installing Homebrew (this may prompt for your password)...")
+    cmd = ["/bin/bash", "-c", f'"$(curl -fsSL {_HOMEBREW_INSTALL_URL})"']
+    try:
+        res = subprocess.run(cmd)
+    except FileNotFoundError:
+        return False
+    return res.returncode == 0 and _find_brew() is not None
+
+
+def _brew_install(packages: list[str]) -> bool:
+    brew = _find_brew()
+    if brew is None:
+        return False
+    cmd = [brew, "install", *packages]
+    print(f"Running: {' '.join(cmd)}")
+    res = subprocess.run(cmd)
+    return res.returncode == 0
+
+
+def _maybe_install_macos_build_tools(auto_install: bool) -> None:
+    if not _is_macos():
+        return
+
+    missing: list[str] = []
+    if shutil.which("cmake") is None:
+        missing.append("cmake")
+    if shutil.which("ninja") is None:
+        missing.append("ninja")
+
+    if not missing:
+        return
+
+    if not auto_install:
+        raise RuntimeError(
+            "Missing build tools: "
+            + ", ".join(missing)
+            + ". Install Homebrew and run `brew install cmake ninja`, "
+            "or rerun this script with --install-macos-deps to attempt installing them automatically."
+        )
+
+    if _find_brew() is None:
+        if not _install_homebrew():
+            raise RuntimeError(
+                "Homebrew was not found and could not be installed automatically. "
+                "Install Homebrew from https://brew.sh and retry."
+            )
+
+    if missing and not _brew_install(missing):
+        raise RuntimeError(
+            "Failed to install required build tools via Homebrew. "
+            "Try running `brew install cmake ninja` manually."
+        )
+
+
+def _require_build_tools(*, auto_install_macos_deps: bool = False) -> None:
+    if _is_macos():
+        _maybe_install_macos_build_tools(auto_install_macos_deps)
+
     if shutil.which("cmake") is None:
         raise RuntimeError(
             "CMake was not found in PATH. Install CMake and ensure `cmake` is available, "
@@ -583,9 +662,11 @@ def run_cmake_configure(
     source_dir: Path,
     build_dir: Path,
     cmake_args: List[str],
+    *,
+    auto_install_macos_deps: bool = False,
 ) -> bool:
     """Run CMake configuration."""
-    _require_build_tools()
+    _require_build_tools(auto_install_macos_deps=auto_install_macos_deps)
     build_dir.mkdir(parents=True, exist_ok=True)
 
     gen = _cmake_generator()
@@ -606,7 +687,7 @@ def run_cmake_configure(
 
 def run_cmake_build(build_dir: Path, parallel: int = 0, target: Optional[str] = None) -> bool:
     """Run CMake build."""
-    _require_build_tools()
+    _require_build_tools(auto_install_macos_deps=False)
     cmd = ["cmake", "--build", str(build_dir)]
 
     if target:
@@ -768,6 +849,7 @@ def build_llama_cpp(
     fetch_vendor: bool = True,
     bundle_runtime_dlls: bool = True,
     project_root: Optional[Path] = None,
+    auto_install_macos_deps: bool = False,
 ) -> Optional[Path]:
     """
     Build llama.cpp and return path to the built library.
@@ -812,7 +894,12 @@ def build_llama_cpp(
         enable_blas=enable_blas,
     )
 
-    if not run_cmake_configure(vendor_path, build_dir, cmake_args):
+    if not run_cmake_configure(
+        vendor_path,
+        build_dir,
+        cmake_args,
+        auto_install_macos_deps=auto_install_macos_deps,
+    ):
         print("Error: CMake configuration failed", file=sys.stderr)
         return None
 
@@ -929,6 +1016,15 @@ def main():
         help="Do not bundle Windows runtime DLLs (CUDA/MSVC/OpenMP) next to the built library",
     )
 
+    parser.add_argument(
+        "--install-macos-deps",
+        action="store_true",
+        help=(
+            "macOS only: attempt to install missing build tools (Homebrew + cmake + ninja) automatically. "
+            "If you prefer manual setup, install Homebrew then run `brew install cmake ninja`."
+        ),
+    )
+
     args = parser.parse_args()
 
     project_root = args.project_root or get_project_root()
@@ -986,6 +1082,7 @@ def main():
         fetch_vendor=not args.no_fetch_vendor,
         bundle_runtime_dlls=(not args.no_bundle_runtime_dlls) if _is_windows() else False,
         project_root=project_root,
+        auto_install_macos_deps=args.install_macos_deps,
     )
 
     if lib_path:

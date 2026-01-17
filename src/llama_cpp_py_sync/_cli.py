@@ -1,5 +1,6 @@
 import argparse
 import os
+import ssl
 import sys
 import urllib.request
 from pathlib import Path
@@ -75,7 +76,31 @@ def _download_with_progress(url: str, dest: Path) -> None:
     if tmp.exists():
         tmp.unlink(missing_ok=True)
 
-    urllib.request.urlretrieve(url, tmp, reporthook=_report)
+    ctx: ssl.SSLContext | None = None
+    try:
+        import certifi  # type: ignore
+
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except Exception:
+        # Fall back to system defaults. On some macOS Python installs this may fail
+        # if system certificates are not configured; installing certifi fixes it.
+        ctx = None
+
+    req = urllib.request.Request(url, headers={"User-Agent": "llama-cpp-py-sync"})
+    with urllib.request.urlopen(req, context=ctx) as resp, open(tmp, "wb") as f:
+        total = int(resp.headers.get("Content-Length") or 0)
+        downloaded = 0
+        chunk_size = 1024 * 256
+        while True:
+            chunk = resp.read(chunk_size)
+            if not chunk:
+                break
+            f.write(chunk)
+            if total > 0:
+                downloaded += len(chunk)
+                pct = min(100.0, downloaded * 100.0 / total)
+                sys.stdout.write(f"\rDownloading model: {pct:5.1f}%")
+                sys.stdout.flush()
     sys.stdout.write("\n")
     sys.stdout.flush()
 
