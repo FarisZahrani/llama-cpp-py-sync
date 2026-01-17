@@ -966,6 +966,13 @@ jobs:
           path: dist_pypi
           pattern: wheel-*-cpu
           merge-multiple: true
+
+      - name: Download macOS Metal wheels (for PyPI)
+        uses: actions/download-artifact@v4
+        with:
+          path: dist_pypi
+          pattern: wheel-macos-arm64-metal
+          merge-multiple: true
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
