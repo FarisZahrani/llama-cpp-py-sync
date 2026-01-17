@@ -16,6 +16,37 @@ jobs:
         with:
           python-version-file: .python-version
 
+      - name: Resolve pinned llama.cpp SHA
+        id: pinned
+        run: |
+          python - <<'PY'
+          import json, pathlib, re, sys
+
+          root = pathlib.Path('.')
+          sha = ''
+
+          state = root / '.llama_cpp_sync_state.json'
+          if state.exists():
+              try:
+                  sha = json.loads(state.read_text(encoding='utf-8')).get('last_sync_sha', '')
+              except Exception:
+                  sha = ''
+
+          if not sha:
+              bindings = root / 'src' / 'llama_cpp_py_sync' / '_cffi_bindings.py'
+              if bindings.exists():
+                  m = re.search(r"llama\.cpp commit:\s*([0-9a-fA-F]{7,40})", bindings.read_text(encoding='utf-8'))
+                  if m:
+                      sha = m.group(1)
+
+          if not sha:
+              print('Could not resolve pinned llama.cpp SHA', file=sys.stderr)
+              sys.exit(1)
+
+          print(f"sha={sha}")
+          print(f"sha={sha}", file=open(os.environ['GITHUB_OUTPUT'], 'a'))
+          PY
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -27,9 +58,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          UPSTREAM_SHA=$(python -c "import json; print(json.load(open('.llama_cpp_sync_state.json','r',encoding='utf-8')).get('last_sync_sha',''))")
+          UPSTREAM_SHA="${{ steps.pinned.outputs.sha }}"
           if [ -z "${UPSTREAM_SHA}" ]; then
-            echo "Missing last_sync_sha in .llama_cpp_sync_state.json" >&2
+            echo "Missing pinned SHA" >&2
             exit 1
           fi
 
@@ -42,8 +73,8 @@ jobs:
 
       - name: Regenerate bindings (check only)
         run: |
-          # Use the recorded upstream SHA for reproducible headers in the generated banner.
-          UPSTREAM_SHA=$(python -c "import json; print(json.load(open('.llama_cpp_sync_state.json','r',encoding='utf-8')).get('last_sync_sha','unknown'))")
+          # Use the pinned upstream SHA for reproducible headers in the generated banner.
+          UPSTREAM_SHA="${{ steps.pinned.outputs.sha }}"
           python scripts/gen_bindings.py --commit-sha "$UPSTREAM_SHA"
 
       - name: Validate header, structs/enums, and signatures
