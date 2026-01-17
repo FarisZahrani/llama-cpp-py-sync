@@ -687,22 +687,46 @@ def _copy_macos_dependency_dylibs(lib_path: Path, package_dir: Path) -> None:
     lib_dir = lib_path.parent
     patterns = ["libllama*.dylib", "libggml*.dylib"]
 
+    # Some builds (notably Metal) may place dependent dylibs in a nearby output
+    # directory rather than next to libllama.dylib.
+    candidate_dirs: list[Path] = [
+        lib_dir,
+        lib_dir.parent,
+        lib_dir.parent / "lib",
+        lib_dir.parent / "bin",
+    ]
+    candidate_dirs = [p for p in candidate_dirs if p.exists()]
+
     copied: list[Path] = []
     for pattern in patterns:
-        for dep_path in lib_dir.glob(pattern):
-            dest_path = package_dir / dep_path.name
-            if dest_path.exists():
-                continue
-            shutil.copy2(dep_path, dest_path)
-            copied.append(dest_path)
-            print(f"Copied {dep_path} to {dest_path}")
+        for search_dir in candidate_dirs:
+            for dep_path in search_dir.glob(pattern):
+                dest_path = package_dir / dep_path.name
+                if dest_path.exists():
+                    continue
+                shutil.copy2(dep_path, dest_path)
+                copied.append(dest_path)
+                print(f"Copied {dep_path} to {dest_path}")
 
-    for dylib_path in copied:
+    # Always patch the main dylib in the package. Previously we only patched
+    # dylibs that were freshly copied, which left libllama.dylib still pointing
+    # at @rpath dependencies inside built wheels.
+    primary = package_dir / lib_path.name
+    dylibs_to_patch: list[Path] = []
+    if primary.exists():
+        dylibs_to_patch.append(primary)
+    dylibs_to_patch.extend(copied)
+
+    bundled_deps: list[Path] = []
+    for pattern in patterns:
+        bundled_deps.extend(package_dir.glob(pattern))
+
+    for dylib_path in dylibs_to_patch:
         _run_install_name_tool(["-id", f"@loader_path/{dylib_path.name}", str(dylib_path)])
         _run_install_name_tool(["-add_rpath", "@loader_path", str(dylib_path)])
 
-    for dylib_path in copied:
-        for dep in copied:
+    for dylib_path in dylibs_to_patch:
+        for dep in bundled_deps:
             _run_install_name_tool(
                 [
                     "-change",
