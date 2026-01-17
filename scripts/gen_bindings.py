@@ -49,6 +49,71 @@ def preprocess_header(content: str) -> str:
     """
     content = re.sub(r'#include\s*[<"][^>"]+[>"]', '', content)
 
+    def _unwrap_deprecated_macros(text: str) -> str:
+        """Rewrite DEPRECATED(<decl>, <hint>) to just <decl>.
+
+        llama.h uses two styles:
+        - LLAMA_API DEPRECATED(ret_t fn(args), "hint");
+        - DEPRECATED(LLAMA_API ret_t fn(args), "hint");
+
+        For CFFI we want the raw declaration, without the deprecation wrapper.
+        """
+
+        needle = "DEPRECATED("
+        i = 0
+        out: list[str] = []
+
+        while True:
+            j = text.find(needle, i)
+            if j < 0:
+                out.append(text[i:])
+                break
+
+            out.append(text[i:j])
+            k = j + len(needle)
+
+            depth = 1
+            start_args = k
+            while k < len(text) and depth > 0:
+                ch = text[k]
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                k += 1
+
+            if depth != 0:
+                # Unbalanced; give up safely.
+                out.append(text[j:])
+                break
+
+            end_args = k - 1  # index of matching ')'
+            args = text[start_args:end_args]
+
+            # Split into first arg + rest by comma at depth 0.
+            arg0_end = None
+            paren_depth = 0
+            for idx, ch in enumerate(args):
+                if ch == "(":
+                    paren_depth += 1
+                elif ch == ")":
+                    if paren_depth > 0:
+                        paren_depth -= 1
+                elif ch == "," and paren_depth == 0:
+                    arg0_end = idx
+                    break
+
+            if arg0_end is None:
+                # No comma; keep original call.
+                out.append(text[j:k])
+            else:
+                decl = args[:arg0_end].strip()
+                out.append(decl)
+
+            i = k
+
+        return "".join(out)
+
     content = re.sub(r'#\s*if.*?#\s*endif', '', content, flags=re.DOTALL)
     content = re.sub(r'#\s*ifdef.*?#\s*endif', '', content, flags=re.DOTALL)
     content = re.sub(r'#\s*ifndef.*?#\s*endif', '', content, flags=re.DOTALL)
@@ -67,6 +132,8 @@ def preprocess_header(content: str) -> str:
     content = re.sub(r'GGML_RESTRICT\s*', '', content)
     content = re.sub(r'LLAMA_DEPRECATED\s*', '', content)
     content = re.sub(r'GGML_DEPRECATED\s*', '', content)
+
+    content = _unwrap_deprecated_macros(content)
 
     # ggml types referenced in llama.h but defined in other ggml headers. For CFFI ABI
     # bindings we don't need their concrete definitions; treat them as opaque/primitive.

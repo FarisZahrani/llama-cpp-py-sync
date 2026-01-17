@@ -4,6 +4,8 @@
 
 [![Build Wheels](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml)
 [![Sync Upstream](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml)
+[![Tests](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/test.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/test.yml)
+[![Validate Bindings](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/validate-bindings.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/validate-bindings.yml)
 [![PyPI version](https://img.shields.io/pypi/v/llama-cpp-py-sync.svg)](https://pypi.org/project/llama-cpp-py-sync/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -15,9 +17,40 @@
 
 - Automatic upstream sync and binding regeneration
 - Prebuilt wheels built by CI
-- CPU-only wheels published to PyPI
+- CPU wheels published to PyPI
 - Backend-specific wheels (CUDA / Vulkan / Metal) published to GitHub Releases
+- CI checks that the generated CFFI surface matches the upstream C API (functions, structs, enums, and signatures)
 - A small, explicit Python API (`Llama.generate`, `tokenize`, `get_embeddings`, etc.)
+
+### What You Get (and What You Don’t)
+
+- This project binds to the **public C API** that llama.cpp exposes in `llama.h`.
+- It does **not** attempt to bind llama.cpp’s internal C++ implementation such as private headers, C++ classes/templates, or functions that never appear in `llama.h`.
+- We use **CFFI ABI mode**: Python loads a prebuilt shared library at runtime (no compiled Python extension module for the bindings).
+- Because of that, you still need a compatible llama.cpp shared library available, either bundled in the wheel or via `LLAMA_CPP_LIB`.
+- You get a small high-level API (`llama_cpp_py_sync.Llama`) for common tasks, and an “escape hatch” to call the low-level C functions directly via CFFI when needed.
+
+### High-level vs Low-level APIs
+
+- High-level API: `llama_cpp_py_sync.Llama` is the recommended entry point for typical usage such as generation, tokenization, and embeddings.
+
+```python
+import llama_cpp_py_sync as llama
+
+with llama.Llama("path/to/model.gguf", n_ctx=2048, n_gpu_layers=0) as llm:
+    print(llm.generate("Hello", max_tokens=64))
+```
+
+- Low-level API: `llama_cpp_py_sync._cffi_bindings` exposes CFFI access to the underlying llama.cpp C API for advanced use.
+
+```python
+from llama_cpp_py_sync._cffi_bindings import get_ffi, get_lib
+
+ffi = get_ffi()
+lib = get_lib()
+
+print(ffi.string(lib.llama_print_system_info()).decode("utf-8", errors="replace"))
+```
 
 ## Installation
 
@@ -30,6 +63,8 @@ pip install llama-cpp-py-sync
 ```
 
 This installs the **CPU** wheel.
+
+Note: depending on CI configuration and platform support, additional wheels (e.g. macOS Metal) may also be published to PyPI.
 
 ### Quick Chat (Recommended)
 
@@ -212,6 +247,24 @@ llama.is_blas_available()
 4. **Release Publishing**: GitHub Releases are created only for tags that exist upstream
 5. **PyPI Publishing**: CPU-only wheels are published to PyPI for upstream tags (if configured)
 
+### Bindings Validation (API Surface)
+
+To keep the Python bindings aligned with upstream, CI runs a validation step that compares upstream `llama.h` to the generated CFFI `cdef`.
+
+It checks:
+
+- Public function coverage (missing/extra)
+- Struct and enum coverage (missing fields/members)
+- Function signatures (return + parameter types)
+
+Local run (after syncing upstream headers):
+
+```bash
+python scripts/sync_upstream.py
+python scripts/gen_bindings.py --commit-sha "$(python scripts/sync_upstream.py --sha)"
+python scripts/validate_cffi_surface.py --check-structs --check-enums --check-signatures
+```
+
 ### CFFI ABI Mode
 
 Unlike pybind11 or manual ctypes, CFFI ABI mode:
@@ -393,6 +446,19 @@ python scripts/build_llama_cpp.py --detect-only
 # Build wheel
 pip install build
 python -m build --wheel
+```
+
+### Low-level C API access (advanced)
+
+If you need direct access to the underlying C API (beyond the high-level `Llama` wrapper), you can use the generated CFFI bindings:
+
+```python
+from llama_cpp_py_sync._cffi_bindings import get_ffi, get_lib
+
+ffi = get_ffi()
+lib = get_lib()
+
+print(ffi.string(lib.llama_print_system_info()).decode("utf-8", errors="replace"))
 ```
 
 ## Project Structure
