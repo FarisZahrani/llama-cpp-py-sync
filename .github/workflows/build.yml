@@ -107,7 +107,7 @@ jobs:
         id: pinned
         run: |
           python - <<'PY'
-          import json, pathlib, re, sys
+          import json, os, pathlib, re, sys
 
           root = pathlib.Path('.')
           sha = ''
