@@ -424,7 +424,8 @@ def generate_bindings_file(
     project_root: Path,
     vendor_path: Path,
     output_path: Path,
-    commit_sha: Optional[str] = None
+    commit_sha: Optional[str] = None,
+    timestamp: Optional[str] = None,
 ):
     """Generate the _cffi_bindings.py file."""
     headers = find_header_files(vendor_path)
@@ -554,7 +555,7 @@ def get_ffi():
     return ffi
 '''
 
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = timestamp or datetime.utcnow().isoformat()
     commit_sha = commit_sha or "unknown"
 
     output_content = template.format(
@@ -595,6 +596,12 @@ def main():
         help="Commit SHA to record in generated file"
     )
     parser.add_argument(
+        "--timestamp",
+        type=str,
+        default=None,
+        help="Override generated timestamp (use existing banner to avoid diffs)"
+    )
+    parser.add_argument(
         "--project-root",
         type=Path,
         default=None,
@@ -611,7 +618,8 @@ def main():
         project_root=project_root,
         vendor_path=vendor_path,
         output_path=output_path,
-        commit_sha=args.commit_sha
+        commit_sha=args.commit_sha,
+        timestamp=args.timestamp,
     )
 
 
