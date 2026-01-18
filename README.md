@@ -5,7 +5,6 @@
 [![Build Wheels](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/build.yml)
 [![Sync Upstream](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/sync.yml)
 [![Tests](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/test.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/test.yml)
-[![Validate Bindings](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/validate-bindings.yml/badge.svg)](https://github.com/FarisZahrani/llama-cpp-py-sync/actions/workflows/validate-bindings.yml)
 [![PyPI version](https://img.shields.io/pypi/v/llama-cpp-py-sync.svg)](https://pypi.org/project/llama-cpp-py-sync/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
