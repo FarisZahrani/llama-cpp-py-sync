@@ -54,7 +54,7 @@ def _ensure_llama_library() -> None:
     vendor_dir = repo_root / "vendor" / "llama.cpp"
     if not vendor_dir.exists():
         raise RuntimeError(
-            "vendor/llama.cpp not found. Run: git clone https://github.com/ggerganov/llama.cpp.git vendor/llama.cpp"
+            "vendor/llama.cpp not found. Run: git clone https://github.com/ggml-org/llama.cpp.git vendor/llama.cpp"
         )
 
     cmd = [

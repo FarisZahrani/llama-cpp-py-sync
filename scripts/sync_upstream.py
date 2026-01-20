@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional, Tuple
 
-UPSTREAM_REPO = "https://github.com/ggerganov/llama.cpp.git"
+UPSTREAM_REPO = "https://github.com/ggml-org/llama.cpp.git"
 VENDOR_DIR = "vendor/llama.cpp"
 SYNC_STATE_FILE = ".llama_cpp_sync_state.json"
 

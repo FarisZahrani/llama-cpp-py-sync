@@ -11,7 +11,7 @@ on:
         default: 'false'
 
 env:
-  LLAMA_CPP_REPO: https://github.com/ggerganov/llama.cpp.git
+  LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp.git
 
 jobs:
   check-upstream:
@@ -1067,6 +1067,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && needs.check-upstream.outputs.upstream_tag_exists == 'true'
         with:
           files: dist/*.whl
+          body: |
+            **Upstream llama.cpp:**
+            - Release page: https://github.com/ggml-org/llama.cpp/releases/tag/${{ github.ref_name }}
+            - Tag page (fallback): https://github.com/ggml-org/llama.cpp/tree/${{ github.ref_name }}
           generate_release_notes: true
       
       - name: Publish to PyPI

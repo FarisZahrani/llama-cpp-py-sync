@@ -512,5 +512,5 @@ This project uses llama.cpp which is also MIT licensed.
 
 ## Acknowledgments
 
-- [ggerganov/llama.cpp](https://github.com/ggerganov/llama.cpp) - The upstream C/C++ implementation
+- [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp) - The upstream C/C++ implementation
 - [CFFI](https://cffi.readthedocs.io/) - C Foreign Function Interface for Python

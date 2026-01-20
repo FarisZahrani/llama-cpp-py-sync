@@ -16,7 +16,7 @@ permissions:
   actions: write
 
 env:
-  LLAMA_CPP_REPO: https://github.com/ggerganov/llama.cpp.git
+  LLAMA_CPP_REPO: https://github.com/ggml-org/llama.cpp.git
 
 jobs:
   sync:
