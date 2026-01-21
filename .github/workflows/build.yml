@@ -1070,7 +1070,7 @@ jobs:
           body: |
             **Upstream llama.cpp:**
             - Release page: https://github.com/ggml-org/llama.cpp/releases/tag/${{ github.ref_name }}
-            - Tag page (fallback): https://github.com/ggml-org/llama.cpp/tree/${{ github.ref_name }}
+            - Tag page: https://github.com/ggml-org/llama.cpp/tree/${{ github.ref_name }}
           generate_release_notes: true
       
       - name: Publish to PyPI
