@@ -26,11 +26,8 @@ _IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 
 # Keep these in sync with the rewrites in scripts/gen_bindings.py preprocess_header().
-_SIG_TYPE_REWRITES: list[tuple[str, str]] = [
-    (r"\benum\s+ggml_numa_strategy\b", "int"),
-    (r"\benum\s+ggml_opt_optimizer_type\b", "int"),
-    (r"\bggml_opt_get_optimizer_params\b", "void *"),
-]
+# (Currently we aim to preserve types and resolve missing definitions from vendored headers.)
+_SIG_TYPE_REWRITES: list[tuple[str, str]] = []
 
 
 def _project_root() -> Path:

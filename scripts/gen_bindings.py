@@ -37,6 +37,14 @@ def find_header_files(vendor_path: Path) -> dict:
     if ggml_h.exists():
         headers["ggml.h"] = ggml_h
 
+    ggml_cpu_h = vendor_path / "ggml" / "include" / "ggml-cpu.h"
+    if ggml_cpu_h.exists():
+        headers["ggml-cpu.h"] = ggml_cpu_h
+
+    ggml_opt_h = vendor_path / "ggml" / "include" / "ggml-opt.h"
+    if ggml_opt_h.exists():
+        headers["ggml-opt.h"] = ggml_opt_h
+
     return headers
 
 
@@ -135,11 +143,8 @@ def preprocess_header(content: str) -> str:
 
     content = _unwrap_deprecated_macros(content)
 
-    # ggml types referenced in llama.h but defined in other ggml headers. For CFFI ABI
-    # bindings we don't need their concrete definitions; treat them as opaque/primitive.
-    content = re.sub(r'\benum\s+ggml_numa_strategy\b', 'int', content)
-    content = re.sub(r'\benum\s+ggml_opt_optimizer_type\b', 'int', content)
-    content = re.sub(r'\bggml_opt_get_optimizer_params\b', 'void *', content)
+    # Keep ggml referenced types intact where possible; missing enums/typedefs are
+    # resolved from the vendored ggml headers during generation.
 
     content = re.sub(r'\bextern\s+"C"\s*\{', '', content)
     content = re.sub(r'\}\s*//\s*extern\s+"C"', '', content)
@@ -154,7 +159,7 @@ def preprocess_header(content: str) -> str:
 
 def extract_enums(content: str) -> List[str]:
     """Extract enum definitions from header content."""
-    enums = []
+    enums: list[str] = []
 
     enum_pattern = r'enum\s+(\w+)\s*\{([^}]+)\}'
 
@@ -164,16 +169,30 @@ def extract_enums(content: str) -> List[str]:
 
         enum_def = f"enum {enum_name} {{\n"
 
-        members = []
+        members: list[str] = []
         for line in enum_body.split('\n'):
             line = line.strip()
             if line and not line.startswith('//'):
                 line = re.sub(r'//.*$', '', line).strip()
                 if line:
-                    # CFFI only supports simple numeric constants in enums. Upstream headers
-                    # sometimes assign enum values from other macros (e.g. GGML_*). For the
-                    # Python bindings, we only need the enum names, so strip initializers.
-                    line = re.sub(r'\s*=\s*[^,}]+', '', line).strip()
+                    # Normalize to a single enumerator per line.
+                    # Keep a trailing comma (or add one) to ensure valid C syntax.
+                    had_trailing_comma = line.rstrip().endswith(',')
+                    if had_trailing_comma:
+                        line = line.rstrip().rstrip(',').rstrip()
+
+                    # Prefer keeping simple numeric initializers (keeps constants correct)
+                    # but drop complex expressions/macros that CFFI can't evaluate.
+                    m_init = re.match(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*=\s*(?P<rhs>[^,}]+)", line)
+                    if m_init:
+                        rhs = m_init.group("rhs").strip()
+                        if re.fullmatch(r"[-+]?(?:0x[0-9A-Fa-f]+|\d+)", rhs):
+                            line = f"{m_init.group('name')} = {rhs}"
+                        else:
+                            line = m_init.group("name")
+                    # Always emit a comma; it's valid even on the last entry.
+                    if not line.endswith(','):
+                        line = line + ','
                     members.append(f"    {line}")
 
         enum_def += '\n'.join(members)
@@ -181,6 +200,26 @@ def extract_enums(content: str) -> List[str]:
         enums.append(enum_def)
 
     return enums
+
+
+def extract_enums_map(content: str) -> dict[str, str]:
+    """Extract enum definitions keyed by enum name."""
+    out: dict[str, str] = {}
+    for enum_def in extract_enums(content):
+        m = re.match(r"^enum\s+([A-Za-z_][A-Za-z0-9_]*)\b", enum_def.strip())
+        if m:
+            out[m.group(1)] = enum_def
+    return out
+
+
+def extract_named_struct_decls_map(content: str) -> dict[str, str]:
+    """Extract `struct name { ... };` declarations keyed by name."""
+    out: dict[str, str] = {}
+    for struct_def in extract_named_struct_decls(content):
+        m = re.match(r"^struct\s+([A-Za-z_][A-Za-z0-9_]*)\b", struct_def.strip())
+        if m:
+            out[m.group(1)] = struct_def
+    return out
 
 
 def extract_structs(content: str) -> List[str]:
@@ -292,7 +331,10 @@ def extract_typedefs(content: str) -> List[str]:
     """Extract non-struct typedef statements from header content."""
     typedefs: List[str] = []
 
-    typedef_pattern = r"^\s*typedef\s+(?!struct\b)[^;]+;\s*$"
+    # Include typedefs that reference structs (e.g. `typedef struct foo * foo_t;` or
+    # `typedef struct foo (*cb_t)(...);`) but exclude typedefs that contain an inline
+    # struct body (`{ ... }`), which are handled elsewhere.
+    typedef_pattern = r"^\s*typedef\s+[^;{]+;\s*$"
     for match in re.finditer(typedef_pattern, content, re.MULTILINE):
         typedefs.append(match.group(0).strip())
 
@@ -301,10 +343,22 @@ def extract_typedefs(content: str) -> List[str]:
 
 def _typedef_name(typedef_stmt: str) -> Optional[str]:
     """Best-effort extraction of the declared typedef name."""
-    m = re.match(r"^typedef\s+.+?\b([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$", typedef_stmt.strip())
-    if not m:
-        return None
-    return m.group(1)
+    s = typedef_stmt.strip()
+
+    # Function pointer typedefs: `typedef <ret> (*name)(<args>);`
+    m_fp = re.match(
+        r"^typedef\s+.+?\(\s*\*\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)\s*\([^;]*\)\s*;\s*$",
+        s,
+    )
+    if m_fp:
+        return m_fp.group(1)
+
+    # Regular typedefs: `typedef <type> name;`
+    m = re.match(r"^typedef\s+.+?\b([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$", s)
+    if m:
+        return m.group(1)
+
+    return None
 
 
 def extract_functions(content: str) -> List[str]:
@@ -376,9 +430,14 @@ typedef void * ggml_opt_epoch_callback;
 
     if "llama.h" in headers:
         with open(headers["llama.h"], encoding="utf-8", errors="ignore") as f:
-            content = f.read()
+            content = preprocess_header(f.read())
 
-        content = preprocess_header(content)
+        # Discover ggml-related enums/typedefs referenced by llama.h but defined elsewhere.
+        used_enum_names = set(re.findall(r"\benum\s+([A-Za-z_][A-Za-z0-9_]*)\b", content))
+        defined_enum_names = set(re.findall(r"\benum\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{", content))
+        missing_enum_names = used_enum_names - defined_enum_names
+
+        needed_tokens = set(re.findall(r"\bggml_[A-Za-z0-9_]+\b", content))
 
         typedefs = extract_typedefs(content)
         if typedefs:
@@ -400,6 +459,74 @@ typedef void * ggml_opt_epoch_callback;
 
             if filtered_typedefs:
                 cdef_parts.append("\n".join(filtered_typedefs))
+
+        # Pull in missing enum definitions (e.g. ggml_type) from vendored ggml headers.
+        if missing_enum_names:
+            extra_enum_defs: list[str] = []
+            for header_name, header_path in headers.items():
+                if header_name == "llama.h":
+                    continue
+                if header_path is None or not Path(header_path).exists():
+                    continue
+                with open(header_path, encoding="utf-8", errors="ignore") as f:
+                    h_content = preprocess_header(f.read())
+                enums_map = extract_enums_map(h_content)
+                for enum_name in sorted(missing_enum_names):
+                    enum_def = enums_map.get(enum_name)
+                    if enum_def and enum_def not in extra_enum_defs:
+                        extra_enum_defs.append(enum_def)
+
+            if extra_enum_defs:
+                cdef_parts.append("\n\n".join(extra_enum_defs))
+
+        # Pull in ggml typedefs used by llama.h (most are already in the prelude).
+        defined_typedef_names = set(prelude_typedef_names)
+        defined_typedef_names.update({n for n in map(_typedef_name, typedefs) if n})
+
+        extra_typedefs: list[str] = []
+        extra_struct_names: set[str] = set()
+
+        for header_name, header_path in headers.items():
+            if header_name == "llama.h":
+                continue
+            if header_path is None or not Path(header_path).exists():
+                continue
+            with open(header_path, encoding="utf-8", errors="ignore") as f:
+                h_content = preprocess_header(f.read())
+
+            for td in extract_typedefs(h_content):
+                name = _typedef_name(td)
+                if not name:
+                    continue
+                if name in defined_typedef_names:
+                    continue
+                if name not in needed_tokens:
+                    continue
+                if td not in extra_typedefs:
+                    extra_typedefs.append(td)
+                    for sm in re.finditer(r"\bstruct\s+([A-Za-z_][A-Za-z0-9_]*)\b", td):
+                        extra_struct_names.add(sm.group(1))
+
+        # Add dependent struct definitions for extracted typedefs (best-effort).
+        if extra_struct_names:
+            extra_struct_defs: list[str] = []
+            for header_name, header_path in headers.items():
+                if header_name == "llama.h":
+                    continue
+                if header_path is None or not Path(header_path).exists():
+                    continue
+                with open(header_path, encoding="utf-8", errors="ignore") as f:
+                    h_content = preprocess_header(f.read())
+                structs_map = extract_named_struct_decls_map(h_content)
+                for struct_name in sorted(extra_struct_names):
+                    struct_def = structs_map.get(struct_name)
+                    if struct_def and struct_def not in extra_struct_defs:
+                        extra_struct_defs.append(struct_def)
+            if extra_struct_defs:
+                cdef_parts.append("\n\n".join(extra_struct_defs))
+
+        if extra_typedefs:
+            cdef_parts.append("\n".join(extra_typedefs))
 
         enums = extract_enums(content)
         if enums:
