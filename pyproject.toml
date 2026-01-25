@@ -7,7 +7,7 @@ name = "llama-cpp-py-sync"
 dynamic = ["version"]
 description = "Auto-synchronized Python bindings for llama.cpp using CFFI ABI mode"
 readme = "README.md"
-license = "MIT"
+license = { text = "MIT" }
 authors = [
     {name = "Faris Al-Zahrani", email = "contact@fariszahrani.com"}
 ]
