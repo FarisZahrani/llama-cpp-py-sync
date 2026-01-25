@@ -119,12 +119,32 @@ def _resolve_model_path(args_model: Optional[Path]) -> Path:
     return cache_dir / _DEFAULT_MODEL_FILENAME
 
 
+def _confirm_download(url: str, dest: Path) -> bool:
+    if not sys.stdin.isatty():
+        return False
+
+    print(f"Model file not found: {dest}")
+    print(f"Download default model from: {url}")
+    resp = input("Proceed? [y/N]: ").strip().lower()
+    return resp in {"y", "yes"}
+
+
 def _chat(args: argparse.Namespace) -> int:
     if args.prompt is None and not sys.stdin.isatty():
         args.prompt = "Say 'ok'."
 
     model_path = _resolve_model_path(args.model)
     if not model_path.exists():
+        is_default = args.model is None and not os.environ.get("LLAMA_MODEL")
+        if not is_default:
+            print(f"Model file not found: {model_path}")
+            return 2
+
+        if not getattr(args, "yes", False) and not _confirm_download(_DEFAULT_MODEL_URL, model_path):
+            print("Download cancelled.")
+            print("To auto-download without prompting, pass --yes.")
+            return 2
+
         _download_with_progress(_DEFAULT_MODEL_URL, model_path)
 
     _ensure_llama_library()
@@ -215,6 +235,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     chat = sub.add_parser("chat", help="Start a simple interactive chat")
     chat.add_argument("--model", type=Path, default=None, help="Path to GGUF model")
+    chat.add_argument(
+        "--yes",
+        action="store_true",
+        help="Automatically confirm prompts (e.g., default model download).",
+    )
     chat.add_argument("--prompt", type=str, default=None, help="One-shot prompt")
     chat.add_argument(
         "--max-tokens",

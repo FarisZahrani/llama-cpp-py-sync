@@ -7,7 +7,7 @@ name = "llama-cpp-py-sync"
 dynamic = ["version"]
 description = "Auto-synchronized Python bindings for llama.cpp using CFFI ABI mode"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Faris Al-Zahrani", email = "contact@fariszahrani.com"}
 ]
@@ -30,7 +30,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Operating System :: POSIX :: Linux",
     "Operating System :: MacOS :: MacOS X",
@@ -80,6 +79,7 @@ llama_cpp_py_sync = [
     "*.dylib",
     "*.dll",
     "*.pyd",
+    "THIRD_PARTY_NOTICES.txt",
     "py.typed",
 ]
 

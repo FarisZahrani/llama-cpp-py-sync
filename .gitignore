@@ -94,6 +94,12 @@ CMakeFiles/
 cmake_install.cmake
 Makefile
 
+# Native build outputs under src (avoid committing built binaries)
+src/llama_cpp_py_sync/*.dll
+src/llama_cpp_py_sync/*.so
+src/llama_cpp_py_sync/*.dylib
+src/llama_cpp_py_sync/*.pyd
+
 # Model files
 *.gguf
 *.bin

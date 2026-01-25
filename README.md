@@ -73,7 +73,9 @@ After installing from PyPI, you can start an interactive chat session with:
 python -m llama_cpp_py_sync chat
 ```
 
-If you do not pass `--model` (and `LLAMA_MODEL` is not set), the CLI will automatically download a default GGUF model and cache it locally for future runs.
+If you do not pass `--model` (and `LLAMA_MODEL` is not set), the CLI will prompt before downloading a default GGUF model and cache it locally for future runs.
+
+To auto-download without prompting, pass `--yes`.
 
 One-shot prompt:
 
@@ -398,6 +400,9 @@ python -m llama_cpp_py_sync chat --model path/to/model.gguf
 
 By default it uses `LLAMA_MODEL` if set. Otherwise it downloads a default GGUF model and caches it locally.
 
+If the default model is missing, the CLI will prompt before downloading it. To auto-download without prompting, pass `--yes` or set `LLAMA_AUTO_DOWNLOAD=1`.
+If the default model is missing, the CLI will prompt before downloading it. To auto-download without prompting, pass `--yes`.
+
 Model cache location:
 
 - **Windows**: `%LOCALAPPDATA%\llama-cpp-py-sync\models\`
@@ -509,6 +514,8 @@ python scripts/run_tests.py --build-wheel
 MIT License - see [LICENSE](LICENSE) for details.
 
 This project uses llama.cpp which is also MIT licensed.
+
+Third-party license notices are included in [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
 
 ## Acknowledgments
 
