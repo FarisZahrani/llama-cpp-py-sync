@@ -747,7 +747,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --force-reinstall dist\*win_amd64.whl
+          $wheel = Get-ChildItem -Path dist -Filter *win_amd64.whl | Select-Object -First 1
+          if (-not $wheel) { throw "No win_amd64 wheel found in dist/" }
+          python -m pip install --force-reinstall $wheel.FullName
           python -c "from llama_cpp_py_sync._cffi_bindings import get_lib; get_lib(); print('smoke-ok')"
       
       - name: Upload wheel
@@ -914,7 +916,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --force-reinstall dist\*win_amd64.whl
+          $wheel = Get-ChildItem -Path dist -Filter *win_amd64.whl | Select-Object -First 1
+          if (-not $wheel) { throw "No win_amd64 wheel found in dist/" }
+          python -m pip install --force-reinstall $wheel.FullName
           python -c "from llama_cpp_py_sync._cffi_bindings import get_lib; get_lib(); print('smoke-ok')"
       
       - name: Upload wheel
@@ -1074,7 +1078,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          python -m pip install --force-reinstall dist\*win_amd64.whl
+          $wheel = Get-ChildItem -Path dist -Filter *win_amd64.whl | Select-Object -First 1
+          if (-not $wheel) { throw "No win_amd64 wheel found in dist/" }
+          python -m pip install --force-reinstall $wheel.FullName
           python -c "from llama_cpp_py_sync._cffi_bindings import get_lib; get_lib(); print('smoke-ok')"
       
       - name: Upload wheel
