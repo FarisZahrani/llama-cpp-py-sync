@@ -829,7 +829,10 @@ jobs:
             'cublas64_12.dll',
             'cublasLt64_12.dll',
             'cudnn64_8.dll',
-            'nvrtc64_120_0.dll'
+            'nvrtc64_120_0.dll',
+            # CUDA 12+ JIT/link dependencies (often required for loading)
+            'nvJitLink64_12.dll',
+            'nvrtc-builtins64_120.dll'
           )
 
           function Copy-DllIfFound([string]$path) {
