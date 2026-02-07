@@ -928,7 +928,21 @@ jobs:
           }
           $nvTools = 'C:\Program Files\NVIDIA Corporation\NvToolsExt\bin\x64'
           if (Test-Path $nvTools) { $env:Path = "$nvTools;$env:Path" }
-          python -c "from llama_cpp_py_sync._cffi_bindings import get_lib; get_lib(); print('smoke-ok')"
+          python -c "import os; import pathlib; p=os.environ.get('CUDA_PATH'); print('CUDA_PATH=', p); pkg = pathlib.Path(__import__('llama_cpp_py_sync').__file__).parent; print('pkg_dir=', str(pkg)); dlls=sorted([x.name for x in pkg.glob('*.dll')]); print('bundled_dlls=', dlls); \nif p: \n  cuda_bin=os.path.join(p,'bin'); \n  if os.path.isdir(cuda_bin): \n    os.add_dll_directory(cuda_bin); \n    print('added_dll_dir=', cuda_bin); \nif os.path.isdir(r'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'): \n  os.add_dll_directory(r'C:\\Program Files\\NVIDIA Corporation\\NvToolsExt\\bin\\x64'); \n  print('added_dll_dir= NvToolsExt'); \nfrom llama_cpp_py_sync._cffi_bindings import get_lib; get_lib(); print('smoke-ok')"
+
+      - name: Diagnose llama.dll dependencies (windows cuda)
+        if: failure()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          python -c "import pathlib; import llama_cpp_py_sync; p=pathlib.Path(llama_cpp_py_sync.__file__).parent/'llama.dll'; print(p)"
+          $dllPath = python -c "import pathlib; import llama_cpp_py_sync; print((pathlib.Path(llama_cpp_py_sync.__file__).parent/'llama.dll').as_posix())"
+          Write-Host "llama.dll path: $dllPath"
+          if (Test-Path $dllPath) {
+            dumpbin /dependents $dllPath
+          } else {
+            Write-Warning "llama.dll not found at expected location"
+          }
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
