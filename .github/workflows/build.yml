@@ -808,6 +808,27 @@ jobs:
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
 
+      - name: Bundle ggml dependency DLLs (windows cuda)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
+          New-Item -ItemType Directory -Force -Path $packageDir | Out-Null
+
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'vendor\llama.cpp\build'
+          if (-not (Test-Path $buildDir)) { throw "llama.cpp build dir not found: $buildDir" }
+
+          $deps = Get-ChildItem -Path $buildDir -Recurse -Filter 'ggml*.dll' -ErrorAction SilentlyContinue
+          if (-not $deps) {
+            Write-Warning "No ggml*.dll files found under $buildDir. If smoke test still fails with 0x7e, the missing dependency may be elsewhere."
+          } else {
+            foreach ($d in $deps) {
+              Copy-Item -Force $d.FullName $packageDir
+              Write-Host "Bundled ggml dep: $($d.FullName) -> $packageDir"
+            }
+          }
+
       - name: Bundle Windows runtime DLLs
         shell: pwsh
         run: |
