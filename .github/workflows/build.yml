@@ -956,14 +956,24 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-          python -c "import pathlib; import llama_cpp_py_sync; p=pathlib.Path(llama_cpp_py_sync.__file__).parent/'llama.dll'; print(p)"
-          $dllPath = python -c "import pathlib; import llama_cpp_py_sync; print((pathlib.Path(llama_cpp_py_sync.__file__).parent/'llama.dll').as_posix())"
-          Write-Host "llama.dll path: $dllPath"
-          if (Test-Path $dllPath) {
-            dumpbin /dependents $dllPath
-          } else {
-            Write-Warning "llama.dll not found at expected location"
+          $pkgDir = python -c "import pathlib, llama_cpp_py_sync; print(pathlib.Path(llama_cpp_py_sync.__file__).parent.as_posix())"
+          Write-Host "pkg_dir: $pkgDir"
+          if (Test-Path $pkgDir) {
+            Write-Host "DLLs in package dir:"
+            Get-ChildItem -Path $pkgDir -Filter *.dll | Select-Object Name,Length | Format-Table -AutoSize
           }
+
+          $llamaDll = Join-Path $pkgDir 'llama.dll'
+          Write-Host "llama.dll path: $llamaDll"
+          if (Test-Path $llamaDll) { dumpbin /dependents $llamaDll } else { Write-Warning "llama.dll not found" }
+
+          $ggmlDll = Join-Path $pkgDir 'ggml.dll'
+          Write-Host "ggml.dll path: $ggmlDll"
+          if (Test-Path $ggmlDll) { dumpbin /dependents $ggmlDll } else { Write-Warning "ggml.dll not found" }
+
+          $ggmlBaseDll = Join-Path $pkgDir 'ggml-base.dll'
+          Write-Host "ggml-base.dll path: $ggmlBaseDll"
+          if (Test-Path $ggmlBaseDll) { dumpbin /dependents $ggmlBaseDll } else { Write-Warning "ggml-base.dll not found" }
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
