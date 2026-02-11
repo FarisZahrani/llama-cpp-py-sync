@@ -907,6 +907,21 @@ jobs:
             }
           }
 
+          # CUDA minor versions can change helper DLL suffixes; opportunistically bundle any matching variants.
+          if ($env:CUDA_PATH) {
+            $cudaBin = Join-Path $env:CUDA_PATH 'bin'
+            if (Test-Path $cudaBin) {
+              $wildcards = @('nvJitLink64_*.dll', 'nvrtc-builtins64_*.dll')
+              foreach ($wc in $wildcards) {
+                $matches = Get-ChildItem -Path $cudaBin -Filter $wc -ErrorAction SilentlyContinue
+                foreach ($m in $matches) {
+                  Copy-Item -Force $m.FullName $packageDir
+                  Write-Host "Bundled (wildcard): $($m.FullName)"
+                }
+              }
+            }
+          }
+
           $missing = @()
           foreach ($n in $requiredDlls) { if (-not $found[$n]) { $missing += $n } }
           if ($missing.Count -gt 0) {
@@ -974,6 +989,14 @@ jobs:
           $ggmlBaseDll = Join-Path $pkgDir 'ggml-base.dll'
           Write-Host "ggml-base.dll path: $ggmlBaseDll"
           if (Test-Path $ggmlBaseDll) { dumpbin /dependents $ggmlBaseDll } else { Write-Warning "ggml-base.dll not found" }
+
+          $ggmlCpuDll = Join-Path $pkgDir 'ggml-cpu.dll'
+          Write-Host "ggml-cpu.dll path: $ggmlCpuDll"
+          if (Test-Path $ggmlCpuDll) { dumpbin /dependents $ggmlCpuDll } else { Write-Warning "ggml-cpu.dll not found" }
+
+          $ggmlCudaDll = Join-Path $pkgDir 'ggml-cuda.dll'
+          Write-Host "ggml-cuda.dll path: $ggmlCudaDll"
+          if (Test-Path $ggmlCudaDll) { dumpbin /dependents $ggmlCudaDll } else { Write-Warning "ggml-cuda.dll not found" }
       
       - name: Upload wheel
         uses: actions/upload-artifact@v4
