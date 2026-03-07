@@ -63,7 +63,7 @@ pip install llama-cpp-py-sync
 
 This installs the **CPU** wheel.
 
-Note: depending on CI configuration and platform support, additional wheels (e.g. macOS Metal) may also be published to PyPI.
+Note: depending on CI configuration and platform support, additional wheels may also be published to PyPI.
 
 ### Quick Chat (Recommended)
 
@@ -400,7 +400,6 @@ python -m llama_cpp_py_sync chat --model path/to/model.gguf
 
 By default it uses `LLAMA_MODEL` if set. Otherwise it downloads a default GGUF model and caches it locally.
 
-If the default model is missing, the CLI will prompt before downloading it. To auto-download without prompting, pass `--yes` or set `LLAMA_AUTO_DOWNLOAD=1`.
 If the default model is missing, the CLI will prompt before downloading it. To auto-download without prompting, pass `--yes`.
 
 Model cache location:
@@ -504,7 +503,7 @@ python scripts/run_tests.py
 Optionally also verify wheel packaging locally:
 
 ```bash
-python scripts/run_tests.py --build-wheel
+python scripts/run_tests.py
 ```
 
 5. Submit a pull request
