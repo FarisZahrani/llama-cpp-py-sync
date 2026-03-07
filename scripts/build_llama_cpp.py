@@ -603,6 +603,9 @@ def get_cmake_args(
         "-DLLAMA_CURL=OFF",
     ]
 
+    if platform.system() == "Linux":
+        args.append("-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON")
+
     # When producing distributable wheels in CI, never compile with -march=native
     # (GGML_NATIVE=ON). GitHub runners may support instructions (e.g. AVX512) that
     # are not available on end-user CPUs, leading to runtime "Illegal instruction"
@@ -764,6 +767,19 @@ def _run_install_name_tool(args: list[str]) -> None:
         return
 
 
+def _run_patchelf(args: list[str]) -> bool:
+    patchelf = shutil.which("patchelf")
+    if not patchelf:
+        return False
+
+    try:
+        result = subprocess.run([patchelf, *args], check=False, capture_output=True, text=True)
+    except FileNotFoundError:
+        return False
+
+    return result.returncode == 0
+
+
 def _copy_macos_dependency_dylibs(lib_path: Path, package_dir: Path) -> None:
     lib_dir = lib_path.parent
     patterns = ["libllama*.dylib", "libggml*.dylib"]
@@ -818,6 +834,62 @@ def _copy_macos_dependency_dylibs(lib_path: Path, package_dir: Path) -> None:
             )
 
 
+def _copy_linux_dependency_sos(lib_path: Path, package_dir: Path) -> None:
+    lib_dir = lib_path.parent
+    patterns = ["libggml*.so*"]
+
+    candidate_dirs: list[Path] = [
+        lib_dir,
+        lib_dir.parent,
+        lib_dir.parent / "lib",
+        lib_dir.parent / "bin",
+    ]
+    candidate_dirs = [p for p in candidate_dirs if p.exists()]
+
+    copied_any = False
+    for pattern in patterns:
+        for search_dir in candidate_dirs:
+            for dep_path in search_dir.glob(pattern):
+                if dep_path.name == lib_path.name:
+                    continue
+
+                dest_path = package_dir / dep_path.name
+                if dest_path.exists():
+                    continue
+
+                shutil.copy2(dep_path, dest_path)
+                copied_any = True
+                print(f"Copied {dep_path} to {dest_path}")
+
+    if not copied_any:
+        print(
+            "Note: no libggml*.so* dependencies were found next to the built llama shared library. "
+            "If the packaged libllama.so fails to load on Linux, ensure the build outputs include the ggml shared libraries."
+        )
+
+
+def _patch_linux_rpath(package_dir: Path) -> None:
+    shared_objects = sorted(path for path in package_dir.glob("*.so*") if path.is_file())
+    if not shared_objects:
+        return
+
+    patched_any = False
+    for so_path in shared_objects:
+        if _run_patchelf(["--set-rpath", "$ORIGIN", str(so_path)]):
+            patched_any = True
+            print(f"Patched RUNPATH on {so_path} to $ORIGIN")
+        else:
+            print(
+                "Warning: failed to set Linux RUNPATH with patchelf for "
+                f"{so_path}. Bundled shared libraries may not load unless patchelf is installed."
+            )
+
+    if not patched_any:
+        print(
+            "Warning: patchelf was not available, so Linux bundled shared libraries were not patched with $ORIGIN RUNPATH."
+        )
+
+
 def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
     """Copy the built library to the package directory."""
     package_dir.mkdir(parents=True, exist_ok=True)
@@ -832,6 +904,10 @@ def copy_library_to_package(lib_path: Path, package_dir: Path) -> Path:
 
     if platform.system().lower() == "darwin" and lib_path.suffix.lower() == ".dylib":
         _copy_macos_dependency_dylibs(lib_path, package_dir)
+
+    if platform.system().lower() == "linux" and ".so" in lib_path.name:
+        _copy_linux_dependency_sos(lib_path, package_dir)
+        _patch_linux_rpath(package_dir)
 
     return dest_path
 

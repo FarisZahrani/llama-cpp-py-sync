@@ -76,6 +76,7 @@ version = {attr = "llama_cpp_py_sync._version.__version__"}
 [tool.setuptools.package-data]
 llama_cpp_py_sync = [
     "*.so",
+    "*.so.*",
     "*.dylib",
     "*.dll",
     "*.pyd",
