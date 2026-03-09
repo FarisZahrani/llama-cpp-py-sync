@@ -208,7 +208,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential
+          sudo apt-get install -y cmake ninja-build build-essential patchelf
 
       - name: Regenerate bindings from vendored llama.cpp
         run: |
@@ -276,12 +276,68 @@ jobs:
             echo "apt-get update failed (attempt $i/5). Sleeping before retry..."
             sleep 20
           done
-          sudo apt-get install -y cmake ninja-build build-essential
+          sudo apt-get install -y cmake ninja-build build-essential patchelf
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install build wheel cffi numpy
+
+      - name: Discover CUDA library directories
+        id: cuda_libs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cuda_root=""
+          for candidate in "${CUDA_PATH:-}" "${CUDA_HOME:-}"; do
+            if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+              cuda_root="$candidate"
+              break
+            fi
+          done
+
+          if [ -z "$cuda_root" ] && command -v nvcc >/dev/null 2>&1; then
+            cuda_root="$(cd "$(dirname "$(command -v nvcc)")/.." && pwd)"
+          fi
+
+          if [ -z "$cuda_root" ]; then
+            for candidate in /usr/local/cuda /usr/local/cuda-* /opt/cuda /opt/cuda-*; do
+              if [ -d "$candidate" ]; then
+                cuda_root="$candidate"
+                break
+              fi
+            done
+          fi
+
+          if [ -z "$cuda_root" ]; then
+            echo "Could not determine CUDA root on the Linux CUDA runner" >&2
+            exit 1
+          fi
+
+          lib_dirs=()
+          for subdir in lib64 targets/x86_64-linux/lib lib; do
+            if [ -d "$cuda_root/$subdir" ]; then
+              lib_dirs+=("$cuda_root/$subdir")
+            fi
+          done
+
+          if [ ${#lib_dirs[@]} -eq 0 ]; then
+            echo "Could not find CUDA library directories under $cuda_root" >&2
+            exit 1
+          fi
+
+          cuda_lib_dirs="$(IFS=:; echo "${lib_dirs[*]}")"
+
+          echo "cuda_root=$cuda_root" >> "$GITHUB_OUTPUT"
+          echo "cuda_lib_dirs=$cuda_lib_dirs" >> "$GITHUB_OUTPUT"
+
+          if [ -d "$cuda_root/bin" ]; then
+            echo "$cuda_root/bin" >> "$GITHUB_PATH"
+          fi
+
+          echo "Using CUDA root: $cuda_root"
+          echo "Using CUDA library directories: $cuda_lib_dirs"
       
       - name: Clone llama.cpp
         shell: pwsh
@@ -297,6 +353,10 @@ jobs:
           python scripts/gen_bindings.py --commit-sha "$(git -C vendor/llama.cpp rev-parse HEAD)"
       
       - name: Build llama.cpp with CUDA
+        env:
+          CUDA_HOME: ${{ steps.cuda_libs.outputs.cuda_root }}
+          CUDA_PATH: ${{ steps.cuda_libs.outputs.cuda_root }}
+          LLAMA_CPP_CUDA_LIB_DIRS: ${{ steps.cuda_libs.outputs.cuda_lib_dirs }}
         run: |
           python scripts/build_llama_cpp.py --no-rocm --no-vulkan --no-metal --parallel 2
 
@@ -304,21 +364,40 @@ jobs:
         run: |
           python scripts/validate_llama_exports.py
 
-      - name: Bundle llama.cpp dependency DLLs
-        shell: pwsh
+      - name: Verify bundled Linux CUDA shared libraries
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          $packageDir = Join-Path $env:GITHUB_WORKSPACE 'src\llama_cpp_py_sync'
-          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'vendor\llama.cpp\build'
-          if (-not (Test-Path $buildDir)) {
-            Write-Host "llama.cpp build dir not found: $buildDir"
-            exit 0
-          }
-          $depDlls = Get-ChildItem -Path $buildDir -Recurse -Filter 'ggml*.dll' -ErrorAction SilentlyContinue
-          foreach ($d in $depDlls) {
-            Copy-Item -Force $d.FullName $packageDir
-            Write-Host "Bundled llama.cpp dep: $($d.FullName)"
-          }
+          set -euo pipefail
+          pkg_dir="$GITHUB_WORKSPACE/src/llama_cpp_py_sync"
+
+          echo "Bundled Linux shared libraries:"
+          find "$pkg_dir" -maxdepth 1 -type f \( \
+            -name 'libllama.so*' -o \
+            -name 'libggml*.so*' -o \
+            -name 'libcudart.so*' -o \
+            -name 'libcublas*.so*' -o \
+            -name 'libcusparse.so*' -o \
+            -name 'libcusolver.so*' -o \
+            -name 'libcurand.so*' -o \
+            -name 'libnv*.so*' \
+          \) | sort
+
+          ldd_output="$(ldd "$pkg_dir/libggml-cuda.so.0" || true)"
+          printf '%s\n' "$ldd_output"
+
+          unresolved_runtime="$(printf '%s\n' "$ldd_output" | grep '=> not found' | grep -E 'libcudart|libcublas|libcublasLt|libcusparse|libcusolver|libcurand|libnvrtc|libnvJitLink' || true)"
+          if [ -n "$unresolved_runtime" ]; then
+            echo "Unresolved bundled CUDA runtime libraries remain:" >&2
+            printf '%s\n' "$unresolved_runtime" >&2
+            exit 1
+          fi
+
+          nonlocal_runtime="$(printf '%s\n' "$ldd_output" | grep -E 'libcudart|libcublas|libcublasLt|libcusparse|libcusolver|libcurand|libnvrtc|libnvJitLink' | grep -Fv "$pkg_dir" || true)"
+          if [ -n "$nonlocal_runtime" ]; then
+            echo "CUDA runtime libraries were not resolved from the package directory:" >&2
+            printf '%s\n' "$nonlocal_runtime" >&2
+            exit 1
+          fi
       
       - name: Generate version
         run: |
@@ -378,7 +457,7 @@ jobs:
       - name: Install build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build build-essential libvulkan-dev glslc glslang-tools
+          sudo apt-get install -y cmake ninja-build build-essential patchelf libvulkan-dev glslc glslang-tools
 
       - name: Regenerate bindings from vendored llama.cpp
         run: |

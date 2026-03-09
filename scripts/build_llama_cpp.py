@@ -145,6 +145,115 @@ def _copy_cuda_runtime_dlls(package_dir: Path) -> int:
     return copied
 
 
+def _copy_runtime_so(src: Path, dst_dir: Path) -> bool:
+    if not src.exists() or not src.is_file():
+        return False
+    dst = dst_dir / src.name
+    try:
+        shutil.copy2(src, dst)
+    except Exception:
+        return False
+    return True
+
+
+def _append_unique_dir(dirs: list[Path], path: Path) -> None:
+    if not path.exists() or not path.is_dir():
+        return
+    if path in dirs:
+        return
+    dirs.append(path)
+
+
+def _linux_cuda_library_dirs() -> list[Path]:
+    dirs: list[Path] = []
+
+    for env_key in ["LLAMA_CPP_CUDA_LIB_DIRS", "LLAMA_CPP_EXTRA_LIB_DIRS", "LD_LIBRARY_PATH"]:
+        for raw_path in os.environ.get(env_key, "").split(os.pathsep):
+            if raw_path:
+                _append_unique_dir(dirs, Path(raw_path))
+
+    cuda_roots: list[Path] = []
+    for raw_root in [os.environ.get("CUDA_HOME"), os.environ.get("CUDA_PATH")]:
+        if raw_root:
+            cuda_roots.append(Path(raw_root))
+
+    nvcc = shutil.which("nvcc")
+    if nvcc:
+        cuda_roots.append(Path(nvcc).resolve().parent.parent)
+
+    cuda_roots.extend([Path("/usr/local/cuda"), Path("/usr/cuda")])
+
+    seen_roots: list[Path] = []
+    for root in cuda_roots:
+        if root in seen_roots:
+            continue
+        seen_roots.append(root)
+        for subdir in ["lib64", "targets/x86_64-linux/lib", "lib"]:
+            _append_unique_dir(dirs, root / subdir)
+
+    for raw_path in sys.path:
+        if not raw_path:
+            continue
+        base = Path(raw_path)
+        if not base.exists() or not base.is_dir():
+            continue
+        nvidia_root = base / "nvidia"
+        if not nvidia_root.exists() or not nvidia_root.is_dir():
+            continue
+        for lib_dir in sorted(nvidia_root.glob("*/lib")):
+            _append_unique_dir(dirs, lib_dir)
+
+    return dirs
+
+
+def _copy_linux_cuda_runtime_sos(package_dir: Path) -> int:
+    required = [
+        "libcudart.so*",
+        "libcublas.so*",
+        "libcublasLt.so*",
+        "libcusparse.so*",
+        "libcusolver.so*",
+        "libcurand.so*",
+        "libnvrtc.so*",
+        "libnvJitLink.so*",
+    ]
+
+    copied = 0
+    seen: set[str] = set()
+    for search_dir in _linux_cuda_library_dirs():
+        for pattern in required:
+            for src in sorted(search_dir.glob(pattern)):
+                key = src.name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                if _copy_runtime_so(src, package_dir):
+                    copied += 1
+
+    return copied
+
+
+def _bundle_linux_runtime_sos(
+    package_dir: Path,
+    backends: Dict[str, Tuple[bool, Optional[str]]],
+    enable_cuda: bool,
+) -> None:
+    cuda_count = 0
+
+    if enable_cuda and backends.get("cuda", (False, None))[0]:
+        cuda_count = _copy_linux_cuda_runtime_sos(package_dir)
+        if cuda_count > 0:
+            _patch_linux_rpath(package_dir)
+
+    if enable_cuda and backends.get("cuda", (False, None))[0] and cuda_count == 0:
+        print(
+            "Warning: CUDA backend was enabled but no Linux CUDA runtime shared libraries were bundled. "
+            "If you see missing libcudart/libcublas errors, ensure CUDA libraries are installed in a standard CUDA location, "
+            "available on LD_LIBRARY_PATH, inside the active Python environment's nvidia/*/lib packages, "
+            "or set LLAMA_CPP_CUDA_LIB_DIRS before building."
+        )
+
+
 def _bundle_windows_runtime_dlls(
     package_dir: Path,
     backends: Dict[str, Tuple[bool, Optional[str]]],
@@ -770,6 +879,14 @@ def _run_install_name_tool(args: list[str]) -> None:
 def _run_patchelf(args: list[str]) -> bool:
     patchelf = shutil.which("patchelf")
     if not patchelf:
+        for candidate in [
+            Path(sys.executable).parent / "patchelf",
+            Path(sys.executable).resolve().parent / "patchelf",
+        ]:
+            if candidate.exists():
+                patchelf = str(candidate)
+                break
+    if not patchelf:
         return False
 
     try:
@@ -1001,6 +1118,13 @@ def build_llama_cpp(
             backends,
             enable_cuda=enable_cuda,
             enable_vulkan=enable_vulkan,
+        )
+
+    if platform.system().lower() == "linux":
+        _bundle_linux_runtime_sos(
+            output_dir,
+            backends,
+            enable_cuda=enable_cuda,
         )
 
     return dest_path
