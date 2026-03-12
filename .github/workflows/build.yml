@@ -382,7 +382,7 @@ jobs:
             -name 'libnv*.so*' \
           \) | sort
 
-          ldd_output="$(ldd "$pkg_dir/libggml-cuda.so.0" || true)"
+          ldd_output="$(env -u LD_LIBRARY_PATH ldd "$pkg_dir/libggml-cuda.so.0" || true)"
           printf '%s\n' "$ldd_output"
 
           unresolved_runtime="$(printf '%s\n' "$ldd_output" | grep '=> not found' | grep -E 'libcudart|libcublas|libcublasLt|libcusparse|libcusolver|libcurand|libnvrtc|libnvJitLink' || true)"
