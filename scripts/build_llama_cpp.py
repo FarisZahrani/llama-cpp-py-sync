@@ -10,6 +10,7 @@ CUDA, ROCm, Vulkan, Metal, and various BLAS implementations.
 import argparse
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -156,6 +157,45 @@ def _copy_runtime_so(src: Path, dst_dir: Path) -> bool:
     return True
 
 
+def _ensure_linux_symlink(dst: Path, target_name: str) -> bool:
+    try:
+        if dst.exists() or dst.is_symlink():
+            return True
+        os.symlink(target_name, dst)
+        return True
+    except Exception:
+        return False
+
+
+def _copy_linux_runtime_so(src: Path, dst_dir: Path) -> bool:
+    if not src.exists() or not (src.is_file() or src.is_symlink()):
+        return False
+
+    dst = dst_dir / src.name
+    if dst.exists() or dst.is_symlink():
+        return True
+
+    if src.is_symlink():
+        try:
+            target_path = src.resolve(strict=True)
+        except Exception:
+            return False
+
+        if not target_path.is_file():
+            return False
+
+        if not _copy_linux_runtime_so(target_path, dst_dir):
+            return False
+
+        return _ensure_linux_symlink(dst, target_path.name)
+
+    try:
+        shutil.copy2(src, dst)
+        return True
+    except Exception:
+        return False
+
+
 def _append_unique_dir(dirs: list[Path], path: Path) -> None:
     if not path.exists() or not path.is_dir():
         return
@@ -207,28 +247,59 @@ def _linux_cuda_library_dirs() -> list[Path]:
 
 
 def _copy_linux_cuda_runtime_sos(package_dir: Path) -> int:
-    required = [
-        "libcudart.so*",
-        "libcublas.so*",
-        "libcublasLt.so*",
-        "libcusparse.so*",
-        "libcusolver.so*",
-        "libcurand.so*",
-        "libnvrtc.so*",
-        "libnvJitLink.so*",
-    ]
+    ggml_cuda = package_dir / "libggml-cuda.so.0"
+    if not ggml_cuda.exists():
+        return 0
 
+    try:
+        proc = subprocess.run(
+            ["ldd", str(ggml_cuda)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except Exception:
+        return 0
+
+    output = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
+
+    # Keep this restricted to CUDA/NVIDIA user-mode libraries. The NVIDIA driver library
+    # (libcuda.so.1) is provided by the host and must not be bundled.
+    wanted_prefixes = ("libcu", "libnv")
     copied = 0
     seen: set[str] = set()
-    for search_dir in _linux_cuda_library_dirs():
-        for pattern in required:
-            for src in sorted(search_dir.glob(pattern)):
-                key = src.name.lower()
-                if key in seen:
-                    continue
-                seen.add(key)
-                if _copy_runtime_so(src, package_dir):
-                    copied += 1
+
+    for line in output.splitlines():
+        m = re.match(r"\s*(?P<name>[^\s]+)\s+=>\s+(?P<target>[^\s]+)", line)
+        if not m:
+            continue
+
+        name = m.group("name").strip()
+        target = m.group("target").strip()
+
+        if not name.startswith(wanted_prefixes):
+            continue
+        if name == "libcuda.so.1":
+            continue
+
+        # ldd unresolved entry looks like: "libcudart.so.12 => not found"
+        # Our regex captures "not" as the target; treat it as unresolved.
+        if target == "not":
+            continue
+
+        src = Path(target)
+        if not src.exists():
+            continue
+
+        key = src.name.lower()
+        if key not in seen:
+            seen.add(key)
+            if _copy_linux_runtime_so(src, package_dir):
+                copied += 1
+
+        # Ensure the dependency name exists in the package dir as a symlink when it differs.
+        if name != src.name:
+            _ensure_linux_symlink(package_dir / name, src.name)
 
     return copied
 
