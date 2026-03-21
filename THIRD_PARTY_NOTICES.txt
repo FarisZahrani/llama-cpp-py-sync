@@ -1,13 +1,14 @@
 Third-Party Notices
 
-This project distributes llama.cpp as part of certain wheel builds.
+This project may distribute third-party components as part of certain wheel builds,
+including llama.cpp and optional platform runtimes (see sections below).
 
 ---
 llama.cpp
 
 MIT License
 
-Copyright (c) 2023-2024 The ggml authors
+Copyright (c) 2023-2026 The ggml authors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -26,3 +27,36 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+NVIDIA CUDA runtime libraries
+
+Certain wheels may bundle NVIDIA CUDA user-mode runtime libraries (for example,
+libraries such as cudart or cuBLAS that are required to load CUDA-enabled
+binaries). Use of those NVIDIA components is subject to the NVIDIA Software
+License Agreement for the CUDA Toolkit:
+
+https://docs.nvidia.com/cuda/eula/index.html
+
+---
+Microsoft Visual C++ runtime
+
+Certain Windows wheels may bundle Microsoft Visual C++ runtime DLLs (for example,
+vcruntime140.dll, msvcp140.dll, concrt140.dll, or OpenMP-related DLLs). Those
+Microsoft redistributables are provided under the Microsoft Visual C++
+Redistributable licensing terms:
+
+https://learn.microsoft.com/en-us/visualstudio/releases/2022/redistribution
+
+---
+Vulkan loader
+
+Certain Windows wheels may bundle the Vulkan loader (vulkan-1.dll). The Vulkan
+Loader is provided by The Khronos Group Inc. and contributors under the Apache
+License, Version 2.0. Full license text:
+
+https://www.apache.org/licenses/LICENSE-2.0
+
+Upstream source repository:
+
+https://github.com/KhronosGroup/Vulkan-Loader
