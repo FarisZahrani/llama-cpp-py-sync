@@ -41,6 +41,8 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 requires-python = ">=3.8"
@@ -86,7 +88,7 @@ llama_cpp_py_sync = [
 
 [tool.black]
 line-length = 100
-target-version = ["py38", "py39", "py310", "py311", "py312"]
+target-version = ["py38", "py39", "py310", "py311", "py312", "py313", "py314"]
 
 [tool.ruff]
 line-length = 100
@@ -111,5 +113,5 @@ python_files = ["test_*.py"]
 python_functions = ["test_*"]
 
 [tool.llama_cpp_py_sync.ci]
-build_python = "3.11.9"
-test_pythons = ["3.8", "3.9", "3.10", "3.11", "3.12"]
+build_python = "3.13.13"
+test_pythons = ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]

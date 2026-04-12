@@ -53,7 +53,7 @@ print(ffi.string(lib.llama_print_system_info()).decode("utf-8", errors="replace"
 
 ## Installation
 
-This project supports **Python 3.8+**. During the current testing phase, CI builds are pinned to **Python 3.11.9** for reproducibility, but the published wheels are intended to work across supported Python versions.
+This project supports **Python 3.8 through 3.14**. CI builds wheels with **Python 3.13.13** for reproducibility; the published wheels are intended to work across supported Python versions.
 
 ### From PyPI (Recommended)
 
