@@ -49,11 +49,14 @@ class Llama:
         n_batch: int = 512,
         n_threads: int | None = None,
         n_gpu_layers: int = 0,
+        n_ubatch: int | None = None,
+        n_threads_batch: int | None = None,
         seed: int = -1,
         use_mmap: bool = True,
         use_mlock: bool = False,
         verbose: bool = False,
         embedding: bool = False,
+        flash_attn_type: int | None = None,
     ):
         """
         Initialize the Llama model.
@@ -61,14 +64,18 @@ class Llama:
         Args:
             model_path: Path to the GGUF model file.
             n_ctx: Context size (max tokens in context window).
-            n_batch: Batch size for prompt processing.
-            n_threads: Number of threads to use (default: auto-detect).
+            n_batch: Logical maximum batch size for prompt processing (llama_decode).
+            n_threads: Number of generation threads (default: auto-detect).
             n_gpu_layers: Number of layers to offload to GPU.
+            n_ubatch: Physical microbatch size; capped by ``n_batch``. Defaults to ``n_batch``.
+            n_threads_batch: Threads for prompt/batch processing; defaults to ``n_threads``.
             seed: Random seed for sampling (-1 for random).
             use_mmap: Whether to use memory mapping for model loading.
             use_mlock: Whether to lock model in memory.
             verbose: Whether to print verbose output.
             embedding: Whether to enable embedding mode.
+            flash_attn_type: ``llama_flash_attn_type`` value (e.g. 0 off, 1 on, -1 auto).
+                If ``None``, uses ``LLAMA_FLASH_ATTENTION`` env (same rules as before).
         """
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Model file not found: {model_path}")
@@ -108,17 +115,24 @@ class Llama:
         ctx_params = self._lib.llama_context_default_params()
         ctx_params.n_ctx = n_ctx
         ctx_params.n_batch = n_batch
-        ctx_params.n_threads = n_threads if n_threads else os.cpu_count() or 4
-        ctx_params.n_threads_batch = ctx_params.n_threads
+        ubatch = n_ubatch if n_ubatch is not None else n_batch
+        ctx_params.n_ubatch = max(1, min(n_batch, ubatch))
+        n_thr = n_threads if n_threads else os.cpu_count() or 4
+        ctx_params.n_threads = n_thr
+        ctx_params.n_threads_batch = (
+            n_threads_batch if n_threads_batch is not None else n_thr
+        )
         ctx_params.embeddings = embedding
-        # Flash attention is controlled via an enum in llama.cpp.
-        flash_env = os.environ.get("LLAMA_FLASH_ATTENTION", "0").strip()
-        if flash_env.lower() in ("auto", "-1"):
-            ctx_params.flash_attn_type = -1
-        elif flash_env.lower() not in ("0", "", "false", "off", "disabled"):
-            ctx_params.flash_attn_type = 1
+        if flash_attn_type is not None:
+            ctx_params.flash_attn_type = flash_attn_type
         else:
-            ctx_params.flash_attn_type = 0
+            flash_env = os.environ.get("LLAMA_FLASH_ATTENTION", "0").strip()
+            if flash_env.lower() in ("auto", "-1"):
+                ctx_params.flash_attn_type = -1
+            elif flash_env.lower() not in ("0", "", "false", "off", "disabled"):
+                ctx_params.flash_attn_type = 1
+            else:
+                ctx_params.flash_attn_type = 0
 
         if seed != -1:
             pass
@@ -412,8 +426,10 @@ class Llama:
         top_p: float = 0.95,
         min_p: float = 0.05,
         repeat_penalty: float = 1.1,
+        repeat_last_n: int = 64,
         stop_sequences: list[str] | None = None,
         stream: bool = False,
+        seed: int | None = None,
     ) -> str | Iterator[str]:
         """
         Generate text completion for a prompt.
@@ -425,9 +441,11 @@ class Llama:
             top_k: Top-k sampling parameter.
             top_p: Top-p (nucleus) sampling parameter.
             min_p: Min-p sampling parameter.
-            repeat_penalty: Repetition penalty.
+            repeat_penalty: Repetition penalty (passed to ``llama_sampler_init_penalties``).
+            repeat_last_n: Token window for repetition penalty.
             stop_sequences: List of strings that stop generation.
             stream: If True, return an iterator yielding tokens.
+            seed: RNG seed for the final ``dist`` sampler; ``None`` for non-deterministic.
 
         Returns:
             Generated text (or iterator if stream=True).
@@ -441,6 +459,15 @@ class Llama:
         sampler_params = self._lib.llama_sampler_chain_default_params()
         self._sampler = self._lib.llama_sampler_chain_init(sampler_params)
 
+        self._lib.llama_sampler_chain_add(
+            self._sampler,
+            self._lib.llama_sampler_init_penalties(
+                repeat_last_n,
+                repeat_penalty,
+                0.0,
+                0.0,
+            ),
+        )
         self._lib.llama_sampler_chain_add(
             self._sampler,
             self._lib.llama_sampler_init_top_k(top_k)
@@ -457,9 +484,14 @@ class Llama:
             self._sampler,
             self._lib.llama_sampler_init_temp(temperature)
         )
+        dist_seed = (
+            int.from_bytes(os.urandom(4), "little")
+            if seed is None
+            else (int(seed) & 0xFFFFFFFF)
+        )
         self._lib.llama_sampler_chain_add(
             self._sampler,
-            self._lib.llama_sampler_init_dist(int.from_bytes(os.urandom(4), "little"))
+            self._lib.llama_sampler_init_dist(dist_seed),
         )
 
         tokens = self.tokenize(prompt, add_special=True)
@@ -485,15 +517,14 @@ class Llama:
                 generated_text += piece
 
                 if stop_sequences:
-                    should_stop = False
+                    stopped_at: int | None = None
                     for stop_seq in stop_sequences:
                         if stop_seq in generated_text:
-                            idx = generated_text.find(stop_seq)
-                            generated_text = generated_text[:idx]
-                            should_stop = True
+                            stopped_at = generated_text.find(stop_seq)
+                            generated_text = generated_text[:stopped_at]
                             break
-                    if should_stop:
-                        yield piece[:len(piece) - (len(generated_text) - idx)] if 'idx' in dir() else piece
+                    if stopped_at is not None:
+                        yield piece
                         break
 
                 yield piece

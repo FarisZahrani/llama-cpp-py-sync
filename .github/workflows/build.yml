@@ -175,6 +175,10 @@ jobs:
         run: |
           python scripts/validate_cffi_surface.py --check-structs --check-enums --check-signatures
 
+      - name: Validate high-level Python vs CFFI cdef
+        run: |
+          python scripts/validate_high_level_api.py --module src/llama_cpp_py_sync/embeddings.py
+
       - name: Ensure committed bindings are up-to-date
         run: |
           git diff --exit-code -- src/llama_cpp_py_sync/_cffi_bindings.py

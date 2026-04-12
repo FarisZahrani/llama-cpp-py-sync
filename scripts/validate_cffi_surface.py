@@ -177,8 +177,11 @@ def _extract_struct_fields_from_body(body: str) -> set[str]:
             if "{" in s or "}" in s:
                 continue
             lowered = s.lstrip().lower()
+            # Skip nested type definitions (they contain '{'); keep members like
+            # `enum llama_pooling_type pooling_type;` (no '{' in the declaration).
             if lowered.startswith(("typedef ", "struct ", "enum ", "union ")):
-                continue
+                if "{" in s:
+                    continue
 
             # Function pointer field: capture `(*name)`
             m_fp = re.search(r"\(\s*\*\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)", s)

@@ -34,7 +34,11 @@ def get_embeddings(
     text: str,
     normalize: bool = True,
     n_ctx: int = 512,
+    n_batch: int = 512,
+    n_threads: int | None = None,
     n_gpu_layers: int = 0,
+    n_ubatch: int | None = None,
+    n_threads_batch: int | None = None,
 ) -> list[float]:
     """
     Get embeddings for a single text string.
@@ -44,7 +48,11 @@ def get_embeddings(
         text: Text to embed.
         normalize: Whether to normalize the embedding to unit length.
         n_ctx: Context size (only used if model is a path).
+        n_batch: Max decode batch size (only used if model is a path).
+        n_threads: Generation threads (only used if model is a path).
         n_gpu_layers: GPU layers (only used if model is a path).
+        n_ubatch: Microbatch size (only used if model is a path).
+        n_threads_batch: Batch/prompt threads (only used if model is a path).
 
     Returns:
         Embedding vector as a list of floats.
@@ -58,7 +66,11 @@ def get_embeddings(
         with Llama(
             model,
             n_ctx=n_ctx,
+            n_batch=n_batch,
+            n_threads=n_threads,
             n_gpu_layers=n_gpu_layers,
+            n_ubatch=n_ubatch,
+            n_threads_batch=n_threads_batch,
             embedding=True
         ) as llm:
             embedding = llm.get_embeddings(text)
@@ -76,7 +88,11 @@ def get_embeddings_batch(
     texts: list[str],
     normalize: bool = True,
     n_ctx: int = 512,
+    n_batch: int = 512,
+    n_threads: int | None = None,
     n_gpu_layers: int = 0,
+    n_ubatch: int | None = None,
+    n_threads_batch: int | None = None,
 ) -> list[list[float]]:
     """
     Get embeddings for multiple text strings.
@@ -86,7 +102,11 @@ def get_embeddings_batch(
         texts: List of texts to embed.
         normalize: Whether to normalize embeddings to unit length.
         n_ctx: Context size (only used if model is a path).
+        n_batch: Max decode batch size (only used if model is a path).
+        n_threads: Generation threads (only used if model is a path).
         n_gpu_layers: GPU layers (only used if model is a path).
+        n_ubatch: Microbatch size (only used if model is a path).
+        n_threads_batch: Batch/prompt threads (only used if model is a path).
 
     Returns:
         List of embedding vectors.
@@ -100,7 +120,11 @@ def get_embeddings_batch(
         with Llama(
             model,
             n_ctx=n_ctx,
+            n_batch=n_batch,
+            n_threads=n_threads,
             n_gpu_layers=n_gpu_layers,
+            n_ubatch=n_ubatch,
+            n_threads_batch=n_threads_batch,
             embedding=True
         ) as llm:
             embeddings = [llm.get_embeddings(text) for text in texts]
